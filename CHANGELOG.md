@@ -220,3 +220,7 @@ mistaken for the way things have to be.
   intent deletes by position in its own listing and the CLI took the first match, so on a
   day holding the same food twice — routine once a meal is split across two of them —
   deleting one by id silently removed the other.
+
+- `day` says which meal each entry was filed under. The column holds an id and FoodNoms'
+  own six types carry no name in the store, so an entry sitting in Lunch read as
+  `meal: null` — and anything rewriting an entry had nothing to put it back with.
