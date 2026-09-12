@@ -206,3 +206,12 @@ mistaken for the way things have to be.
   What had looked like "locked blocks runs" was `shortcuts run` reading stdin
   to EOF when given no `-i`, a shortcut showing its result in a dialog, and a
   picker left pending by an earlier run. Importing still needs the screen.
+
+- `edit` no longer deletes what it cannot put back. Its re-log dispatched a `log-food`
+  command the bridge has never defined, so the delete landed and nothing replaced it —
+  see [issue 003](docs/issues/003-edit-deleted-what-it-could-not-re-log.md). Nothing
+  dispatched at run time can re-log a library food (`LogIntent.food` is an entity, and
+  the search intents that would produce one open a blocking picker), so `edit` now
+  refuses unless `--quick-entry` accepts a name-and-macros replacement, logs that
+  replacement *before* deleting the original, and deletes the occurrence it edited
+  rather than the first entry sharing its name.

@@ -1049,6 +1049,13 @@ def main():
                     help="which day the entry is currently on (default today)")
     ed.add_argument("--to-date", dest="to_date", type=parse_when,
                     help="move it to this day; omit to leave it where it is")
+    ed.add_argument("--quick-entry", action="store_true", dest="quick_entry",
+                    help="accept a quick entry in place of the food. An edit is "
+                         "delete plus re-log, and nothing headless can re-log a "
+                         "library food — so the corrected entry keeps the name and "
+                         "the four macros and loses the food, its measure, its "
+                         "barcode and its micronutrients. Required, because that "
+                         "loss is silent otherwise.")
     ed.add_argument("--scale", type=float,
                     help="multiply the portion by this — 0.5 for half of what "
                          "was logged. Macros follow the portion, because the "
@@ -1147,77 +1154,76 @@ def main():
         if qty <= 0:
             sys.exit(f"edit: quantity would be {qty:g}. To remove it, use `delete`.")
 
-        measure = e.get("measure")
-        if not measure:
-            sys.exit(f"edit: {e['name']} carries no measure, so a re-log could "
-                     "only guess the portion. Edit it in FoodNoms.")
+        # FoodNoms has no edit-a-logged-entry intent, so an edit is delete plus
+        # re-log — and the re-log is the hard half. LogIntent's `food` is an
+        # entity, which binds only from a literal written into the action at
+        # build time or from another action's output; the search intents that
+        # would produce one open a picker and block. So nothing that dispatches
+        # a request at run time can put the same food back.
+        #
+        # This used to call a `log-food` bridge command. There has never been
+        # one: `intents.yaml` defines log, log-meal, create-food, delete,
+        # entries and goal. The call did nothing, the poll that followed matched
+        # the entry by name and found a different one, and the entry stayed
+        # deleted. That is how splitting a lunch removed 732 kcal from a day
+        # while reporting success.
+        #
+        # What can be re-logged is a quick entry: the name and four macros, with
+        # no food behind it. That is a real loss — the measure, the barcode and
+        # every micronutrient go with the original — so it is opt-in, and the
+        # re-log happens BEFORE the delete. A double-counted day is visible and
+        # one delete from correct; a deleted entry whose replacement never
+        # landed is silent.
+        if not a.quick_entry:
+            sys.exit(
+                f"edit: the only headless re-log is a quick entry, which would "
+                f"turn {e['name']!r} into a name and four macros — losing its "
+                f"food, measure, barcode and micronutrients. Nothing has been "
+                f"changed. Pass --quick-entry to accept that, or edit it in "
+                f"FoodNoms, or re-log it from a Shortcut with the food baked in.")
 
-        # `date` is stored in UTC and every intent reads what it is handed as
-        # local time. Passing the stored value straight back moves the entry by
-        # the UTC offset — seven hours in Vancouver, enough to push a late entry
-        # onto the next day and quietly change two days' totals.
+        # Which occurrence of this name the entry is, worked out before the
+        # replacement adds another. The intent addresses entries by position in
+        # its own list, so "the first one called Quinoa" is not the same as "the
+        # one being edited" whenever a food is logged twice in a day — and the
+        # replacement guarantees a second. Both lists are insertion-ordered, so
+        # the rank carries across.
+        same_name = [x["entry_id"] for x in day(con, a.on)["entries"]
+                     if (x["name"] or "") == e["name"]]
+        rank = same_name.index(e["entry_id"])
+
+        factor = qty / (e.get("quantity") or qty)
+        scaled = {k: (round(v * factor, 1) if isinstance(v, (int, float)) else None)
+                  for k, v in (("energyCalories", e.get("calories")),
+                               ("protein", e.get("protein")),
+                               ("carbs", e.get("carbs")),
+                               ("fat", e.get("fat")))}
         when = a.to_date or utc_to_local(e["date"])
         target_day = when[:10]
 
+        good, detail = dispatch("log", {"name": e["name"], "date": when, **scaled})
+        if not good:
+            enqueue("log", {"name": e["name"], "date": when, **scaled})
+            sys.exit(f"edit: the replacement did not land ({detail}). Nothing was "
+                     f"deleted, and the re-log is queued — run `foodnomsctl flush` "
+                     f"or delete the queued request if you no longer want it.")
+
+        # Only now is there something to take away.
         idx_when = f"{a.on} 12:00:00"
         listed = call_bridge("entries", date=idx_when)
         names = [n for n in (listed or "").splitlines() if n.strip()]
         matches = [i for i, n in enumerate(names) if n == e["name"]]
-        if not matches:
-            sys.exit(f"edit: {e['name']!r} is not in what the intent returns for "
-                     f"{a.on}, so there is no position to delete. Edit it in "
-                     "FoodNoms.")
-
-        # Delete first. Re-logging first and then failing to delete would double
-        # the day, which is a worse state to land in than a missing entry.
-        call_bridge("delete", date=idx_when, index=matches[0] + 1)
+        if len(matches) <= rank:
+            sys.exit(f"edit: logged the replacement, but the intent does not "
+                     f"return {e['name']!r} at position {rank + 1} for {a.on}, so "
+                     f"there is nothing safe to delete. The day now counts it "
+                     f"twice — remove the old one in FoodNoms.")
+        call_bridge("delete", date=idx_when, index=matches[rank] + 1)
         if [x for x in day(connect(), a.on)["entries"] if x["entry_id"] == e["entry_id"]]:
-            sys.exit(f"edit: could not delete {e['name']}; nothing was changed.")
-
-        # Every id on the target day before the re-log. What proves the re-log
-        # landed is an id that was not there — a name-and-quantity match is not
-        # enough when the same food is already logged twice on the day, which is
-        # exactly the case when a meal is being split across two of them.
-        seen = {x["entry_id"] for x in day(connect(), target_day)["entries"]}
-
-        unit_name = (measure.get("descriptionText")
-                     or measure.get("unit") or "serving")
-        call_bridge("log-food", date=when, quantity=f"{qty:g}",
-                    foodIdentifier=food_entity_id(e.get("food_id")),
-                    foodName=e["name"],
-                    measureIdentifier=measure_entity_id(measure),
-                    measureName=unit_name)
-
-        # Poll, do not glance. The delete has already happened, so a re-log
-        # that is merely slow must not be reported as lost — that is a deleted
-        # entry and a message telling someone to retype it.
-        after = []
-        for _ in range(20):
-            after = [x for x in day(connect(), target_day)["entries"]
-                     if x["entry_id"] not in seen
-                     and x["name"] == e["name"]
-                     and abs((x.get("quantity") or 0) - qty) < 1e-6]
-            if after:
-                break
-            time.sleep(1)
-        if not after:
-            # Still nothing: queue the re-log rather than lose it. The drain
-            # retries on its own, and the entry comes back at the corrected
-            # portion without anyone retyping it.
-            # Macros scale with the portion: the entry carried what was eaten
-            # at the old quantity, and the queued re-log is a quick entry with
-            # no food behind it to recompute them.
-            factor = qty / (e.get("quantity") or qty)
-            scaled = {k: (round(v * factor, 1) if isinstance(v, (int, float)) else None)
-                      for k, v in (("energyCalories", e.get("calories")),
-                                   ("protein", e.get("protein")),
-                                   ("carbs", e.get("carbs")),
-                                   ("fat", e.get("fat")))}
-            path = enqueue("log", {"name": e["name"], "date": when, **scaled})
-            sys.exit(f"edit: deleted {e['name']} and the re-log has not landed yet. "
-                     f"Queued as {os.path.basename(path)} — `foodnomsctl flush` "
-                     f"retries it, and the queue agent does so on its own. "
-                     f"It will come back as {qty:g} x {unit_name}.")
+            sys.exit(f"edit: logged the replacement but could not delete the "
+                     f"original, so {a.on} counts {e['name']} twice. Remove it in "
+                     f"FoodNoms.")
+        unit_name = "quick entry"
         print(f"{e['name']}: {e['quantity']:g} → {qty:g} x {unit_name}"
               + (f", moved to {target_day}" if target_day != a.on else ""))
         return
