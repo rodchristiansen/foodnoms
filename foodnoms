@@ -399,10 +399,17 @@ def day(con, when, components=False):
       WHERE day = ?{scope}
       ORDER BY date
     """, (julian_day(when),)).fetchall()
+    # Which meal each entry was filed under, by name. The column holds an id
+    # and FoodNoms' own six types carry no name in the store, so an entry filed
+    # to Lunch read as nothing at all — and anything rewriting an entry then had
+    # no way to put it back in the meal it came from.
+    names = {m["id"]: m["name"] for m in meal_types(con)}
     entries = []
     for r in rows:
         d = as_food(r)
         d["date"] = r["date"]
+        d["meal"] = (names.get(str(r["mealTypeID"]))
+                     if r["mealTypeID"] is not None else None)
         entries.append(d)
     if components:
         # A meal's items and the meal itself would both be counted, so there is

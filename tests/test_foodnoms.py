@@ -511,3 +511,31 @@ class TestSplitConfirmation(StoreTest):
         same_minute = {"name": "Quinoa", "date": self.when("2026-09-12 19:39:00"),
                        "energyCalories": 467.0}
         self.assertTrue(fn.entry_exists("log", same_minute))
+
+
+class TestDayShowsMeal(StoreTest):
+    """An entry says which meal it was filed under.
+
+    FoodNoms' six built-in meal types carry no name in the store, so reading
+    the column raw gives an id or nothing — and `day` reported `meal: None` for
+    an entry sitting squarely in Lunch. Anything rewriting an entry then had
+    nothing to put it back with.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        con = sqlite3.connect(cls.db)
+        con.execute(
+            "INSERT INTO foodEntryRecord (entryID, name, date, day, quantity, calories, mealTypeID) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (uuid.UUID("BBBBBBBB-0000-4000-8000-000000000001").bytes, "Filed Lunch",
+             "2026-09-05 19:00:00.000", fixture.jd("2026-09-05"), 1.0, 100.0, "2"))
+        con.commit()
+        con.close()
+
+    def test_a_filed_entry_names_its_meal(self):
+        self.assertEqual(self.food("Filed Lunch", "2026-09-05")["meal"], "lunch")
+
+    def test_an_unfiled_entry_has_none(self):
+        self.assertIsNone(self.food("Chia Seeds", "2026-09-05")["meal"])
