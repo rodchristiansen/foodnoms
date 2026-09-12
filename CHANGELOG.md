@@ -215,3 +215,8 @@ mistaken for the way things have to be.
   refuses unless `--quick-entry` accepts a name-and-macros replacement, logs that
   replacement *before* deleting the original, and deletes the occurrence it edited
   rather than the first entry sharing its name.
+
+- `delete <entry-id>` removes the entry named, not the first one sharing its name. The
+  intent deletes by position in its own listing and the CLI took the first match, so on a
+  day holding the same food twice — routine once a meal is split across two of them —
+  deleting one by id silently removed the other.
