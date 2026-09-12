@@ -1101,15 +1101,26 @@ def main():
                      "Is the build installed? `foodnomsctl doctor`.")
         names = [n for n in (listed or "").splitlines() if n.strip()]
 
+        # Which occurrence of the name each hit is. A day routinely holds the
+        # same food twice — a smoothie split between lunch and dinner is two of
+        # everything — and taking the first match then deletes an entry the
+        # caller did not name, by id, silently. Both lists are insertion
+        # ordered, so the rank in the store is the rank in the intent's listing.
+        ranked = []
+        for h in hits if a.all else hits[:1]:
+            same = [x["entry_id"] for x in entries if (x["name"] or "") == h["name"]]
+            ranked.append((h, same.index(h["entry_id"])))
+
         # Deleting shifts every later position, so work from the back.
         targets = []
-        for h in hits if a.all else hits[:1]:
+        for h, rank in ranked:
             matches = [i for i, n in enumerate(names) if n == h["name"]]
-            if not matches:
-                sys.exit(f"delete: {h['name']!r} is in the store for {a.on} but not "
-                         "in what the intent returns for that day, so there is no "
-                         "position to delete. Delete it in FoodNoms.")
-            targets.append((matches.pop(0), h))
+            if len(matches) <= rank:
+                sys.exit(f"delete: {h['name']!r} is entry {rank + 1} of that name in "
+                         f"the store for {a.on}, and the intent returns only "
+                         f"{len(matches)}. There is no position to delete safely — "
+                         "delete it in FoodNoms.")
+            targets.append((matches[rank], h))
         # Sort on the index alone: a tuple sort falls through to comparing the
         # entry dicts when two targets share an index, and dicts do not order.
         for idx, h in sorted(targets, key=lambda t: t[0], reverse=True):
