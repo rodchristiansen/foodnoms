@@ -773,23 +773,53 @@ def queued():
                   if n.endswith(".json"))
 
 
-def entry_exists(command, params):
-    """Whether the store already holds what this request would write.
+def matching_ids(command, params):
+    """The ids of entries that look like what this request would write.
+
+    Identity is name, minute and calories — not name alone. A day can hold the
+    same food twice on purpose: half a lunch moved to dinner is two "Quinoa"
+    rows, and a name-only test then says every write has already landed. That
+    is not hypothetical. Splitting a lunch on 2026-09-12 reported seven writes
+    and seven reductions, and the day lost half of itself: the reduce re-logs
+    matched the dinner half by name, the queue drain skipped four requests as
+    "already in the store", and nothing anywhere had actually been written.
+
+    The date a request carries is local wall-clock, as every intent reads it;
+    stored dates are UTC, so they are converted before comparing.
+    """
+    if command != "log":
+        return set()
+    name = params.get("name")
+    asked = (params.get("date") or "").replace("T", " ")
+    when = asked[:10] or date.today().isoformat()
+    minute = asked[11:16]
+    kcal = params.get("energyCalories", params.get("calories"))
+    found = set()
+    try:
+        con = connect()
+        entries = day(con, when)["entries"]
+    except (sqlite3.Error, SystemExit):
+        return set()
+    for e in entries:
+        if (e["name"] or "") != name:
+            continue
+        if minute and utc_to_local(e["date"])[11:16] != minute:
+            continue
+        if kcal is not None and abs((e.get("calories") or 0) - float(kcal)) > 0.5:
+            continue
+        found.add(e["entry_id"])
+    return found
+
+
+def entry_exists(command, params, baseline=frozenset()):
+    """Whether this request's write has landed, given what was there before.
 
     This is what replaces waiting on `shortcuts run`. The log intent completes
     the write and then never hands control back, so the only signal that a write
-    succeeded is the entry appearing — and once it has, there is nothing left to
-    wait for.
+    succeeded is a *new* entry appearing — the baseline is what makes it new
+    rather than merely present.
     """
-    if command != "log":
-        return False
-    name = params.get("name")
-    when = (params.get("date") or "")[:10] or date.today().isoformat()
-    try:
-        con = connect()
-        return any((e["name"] or "") == name for e in day(con, when)["entries"])
-    except (sqlite3.Error, SystemExit):
-        return False
+    return bool(matching_ids(command, params) - set(baseline))
 
 
 def dispatch(command, params, settle=45):
@@ -802,6 +832,9 @@ def dispatch(command, params, settle=45):
     """
     if not ensure_app_running():
         return False, "FoodNoms would not launch"
+    # Read before writing: every confirmation below asks whether something new
+    # appeared, which is only answerable against what was already there.
+    before = matching_ids(command, params)
     tmp = tempfile.mkdtemp(prefix="foodnoms.")
     req = os.path.join(tmp, "request.json")
     res = os.path.join(tmp, "result.txt")
@@ -820,7 +853,7 @@ def dispatch(command, params, settle=45):
                 if proc.returncode != 0:
                     return False, err or f"shortcuts run failed ({proc.returncode})"
                 break
-            if entry_exists(command, params):
+            if entry_exists(command, params, before):
                 break
             time.sleep(1)
         else:
@@ -833,7 +866,7 @@ def dispatch(command, params, settle=45):
             # concluding anything.
             for _ in range(10):
                 time.sleep(1)
-                if entry_exists(command, params):
+                if entry_exists(command, params, before):
                     return True, ""
             return False, "no entry appeared before the cap"
         # A write that has landed leaves `shortcuts run` hanging with nothing
@@ -849,7 +882,7 @@ def dispatch(command, params, settle=45):
         # costs a manual delete.
         if command == "log":
             for _ in range(8):
-                if entry_exists(command, params):
+                if entry_exists(command, params, before):
                     break
                 time.sleep(1)
             else:
@@ -1141,6 +1174,12 @@ def main():
         if [x for x in day(connect(), a.on)["entries"] if x["entry_id"] == e["entry_id"]]:
             sys.exit(f"edit: could not delete {e['name']}; nothing was changed.")
 
+        # Every id on the target day before the re-log. What proves the re-log
+        # landed is an id that was not there — a name-and-quantity match is not
+        # enough when the same food is already logged twice on the day, which is
+        # exactly the case when a meal is being split across two of them.
+        seen = {x["entry_id"] for x in day(connect(), target_day)["entries"]}
+
         unit_name = (measure.get("descriptionText")
                      or measure.get("unit") or "serving")
         call_bridge("log-food", date=when, quantity=f"{qty:g}",
@@ -1155,7 +1194,8 @@ def main():
         after = []
         for _ in range(20):
             after = [x for x in day(connect(), target_day)["entries"]
-                     if x["name"] == e["name"]
+                     if x["entry_id"] not in seen
+                     and x["name"] == e["name"]
                      and abs((x.get("quantity") or 0) - qty) < 1e-6]
             if after:
                 break

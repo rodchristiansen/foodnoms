@@ -8,9 +8,11 @@ answer looks like a right one.
 import importlib.util
 import os
 import re
+import sqlite3
 import sys
 import tempfile
 import unittest
+import uuid
 from importlib.machinery import SourceFileLoader
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -453,3 +455,59 @@ class TestWorkoutMealTypes(StoreTest):
         for spelling in ("post-workout", "Post Workout", "postworkout", "POST-WORKOUT"):
             self.assertEqual(fn.meal_index(self.con, spelling),
                              fn.meal_index(self.con, "post-workout"))
+
+
+class TestSplitConfirmation(StoreTest):
+    """A write is confirmed by a *new* entry, never by a matching name.
+
+    This is the bug that ate half a lunch. Splitting a meal logs the moved
+    share first and reduces the originals second, so while a split is running
+    the day deliberately holds the same food twice. A name-only check then
+    reads every pending write as already landed: the reductions reported
+    success without re-logging, the queue drain skipped four requests as
+    duplicates, and 732 kcal left the day with every command exiting zero.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        con = sqlite3.connect(cls.db)
+        for eid, when, kcal in (
+                ("AAAAAAAA-0000-4000-8000-000000000001", "2026-09-12 19:39:00.000", 467.0),
+                ("AAAAAAAA-0000-4000-8000-000000000002", "2026-09-13 02:00:00.000", 233.6)):
+            con.execute(
+                "INSERT INTO foodEntryRecord (entryID, name, date, day, quantity, calories) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (uuid.UUID(eid).bytes, "Quinoa", when, fixture.jd("2026-09-12"), 1.0, kcal))
+        con.commit()
+        con.close()
+        cls._connect = fn.connect
+        fn.connect = lambda path=None: cls._connect(cls.db)
+
+    @classmethod
+    def tearDownClass(cls):
+        fn.connect = cls._connect
+
+    def when(self, stored):
+        """The local wall-clock a request would carry for a stored entry."""
+        return fn.utc_to_local(stored)
+
+    def test_the_lunch_half_does_not_confirm_the_dinner_half(self):
+        dinner = {"name": "Quinoa", "date": self.when("2026-09-13 02:00:00"),
+                  "energyCalories": 233.6}
+        lunch = {"name": "Quinoa", "date": self.when("2026-09-12 19:39:00"),
+                 "energyCalories": 233.6}
+        self.assertTrue(fn.entry_exists("log", dinner))
+        self.assertFalse(fn.entry_exists("log", lunch))
+
+    def test_an_entry_already_there_is_not_a_write_that_just_landed(self):
+        req = {"name": "Quinoa", "date": self.when("2026-09-13 02:00:00"),
+               "energyCalories": 233.6}
+        before = fn.matching_ids("log", req)
+        self.assertTrue(before)
+        self.assertFalse(fn.entry_exists("log", req, before))
+
+    def test_calories_separate_two_halves_logged_in_the_same_minute(self):
+        same_minute = {"name": "Quinoa", "date": self.when("2026-09-12 19:39:00"),
+                       "energyCalories": 467.0}
+        self.assertTrue(fn.entry_exists("log", same_minute))
