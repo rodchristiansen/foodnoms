@@ -793,7 +793,28 @@ def matching_ids(command, params):
 
     The date a request carries is local wall-clock, as every intent reads it;
     stored dates are UTC, so they are converted before comparing.
+
+    `create-food` writes no entry at all, so it is identified by the food it
+    puts in the library instead. Returning an empty set for it — which is what
+    every command but `log` used to get — made `entry_exists` permanently
+    false, so a create was never confirmed: it burned the full settle, reported
+    "no entry appeared before the cap", and stayed queued for the next drain to
+    fire again. A create that had in fact landed was therefore indistinguishable
+    from one that had not, and retrying it is how the library gets two foods of
+    the same name.
     """
+    if command == "create-food":
+        name = params.get("name")
+        if not name:
+            return set()
+        try:
+            con = connect()
+            rows = con.execute(
+                "SELECT foodID FROM foodRecord WHERE name = ? "
+                "AND COALESCE(isHidden, 0) = 0", (name,)).fetchall()
+        except sqlite3.Error:
+            return set()
+        return {r["foodID"] for r in rows if r["foodID"]}
     if command != "log":
         return set()
     name = params.get("name")
@@ -824,7 +845,8 @@ def entry_exists(command, params, baseline=frozenset()):
     This is what replaces waiting on `shortcuts run`. The log intent completes
     the write and then never hands control back, so the only signal that a write
     succeeded is a *new* entry appearing — the baseline is what makes it new
-    rather than merely present.
+    rather than merely present. For `create-food` the new thing is a library
+    food rather than an entry; the diff against the baseline is the same.
     """
     return bool(matching_ids(command, params) - set(baseline))
 
@@ -875,7 +897,8 @@ def dispatch(command, params, settle=45):
                 time.sleep(1)
                 if entry_exists(command, params, before):
                     return True, ""
-            return False, "no entry appeared before the cap"
+            noun = "food" if command == "create-food" else "entry"
+            return False, f"no {noun} appeared before the cap"
         # A write that has landed leaves `shortcuts run` hanging with nothing
         # left to do; killing it here is what the flat timeout used to do at 90s.
         if proc.poll() is None:
