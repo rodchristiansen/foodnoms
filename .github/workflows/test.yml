@@ -21,6 +21,13 @@ jobs:
           python-version: ${{ matrix.python }}
       - name: tests
         run: python -m unittest discover -s tests -v
+      # Dates are stored UTC and read local, so a test that hardcodes one side
+      # passes only where it was written. Two awkward zones, one of them on a
+      # 45-minute offset, catch that the same day it is introduced.
+      - name: tests, in zones that are not the author's
+        run: |
+          TZ=UTC python -m unittest discover -s tests
+          TZ=Pacific/Chatham python -m unittest discover -s tests
       - name: the CLI parses and answers for itself
         run: |
           python foodnoms --version

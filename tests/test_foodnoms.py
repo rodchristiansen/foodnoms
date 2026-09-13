@@ -13,6 +13,7 @@ import sys
 import tempfile
 import unittest
 import uuid
+from datetime import datetime, timezone
 from importlib.machinery import SourceFileLoader
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -468,17 +469,31 @@ class TestSplitConfirmation(StoreTest):
     duplicates, and 732 kcal left the day with every command exiting zero.
     """
 
+    # The two sittings, as wall-clock times on the day they belong to. Written
+    # local and stored UTC, the way the app does it — not as fixed UTC strings,
+    # which made these tests pass in Vancouver and fail on a UTC runner, where
+    # a stored 02:00 belongs to the next day and matched nothing.
+    LUNCH = "2026-09-12 12:39:00"
+    DINNER = "2026-09-12 19:00:00"
+
+    @staticmethod
+    def stored(local_wall_clock):
+        """What the store holds for a local time: the same instant, in UTC."""
+        naive = datetime.strptime(local_wall_clock, "%Y-%m-%d %H:%M:%S")
+        return naive.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S.000")
+
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
         con = sqlite3.connect(cls.db)
         for eid, when, kcal in (
-                ("AAAAAAAA-0000-4000-8000-000000000001", "2026-09-12 19:39:00.000", 467.0),
-                ("AAAAAAAA-0000-4000-8000-000000000002", "2026-09-13 02:00:00.000", 233.6)):
+                ("AAAAAAAA-0000-4000-8000-000000000001", cls.LUNCH, 467.0),
+                ("AAAAAAAA-0000-4000-8000-000000000002", cls.DINNER, 233.6)):
             con.execute(
                 "INSERT INTO foodEntryRecord (entryID, name, date, day, quantity, calories) "
                 "VALUES (?, ?, ?, ?, ?, ?)",
-                (uuid.UUID(eid).bytes, "Quinoa", when, fixture.jd("2026-09-12"), 1.0, kcal))
+                (uuid.UUID(eid).bytes, "Quinoa", cls.stored(when),
+                 fixture.jd("2026-09-12"), 1.0, kcal))
         con.commit()
         con.close()
         cls._connect = fn.connect
@@ -488,28 +503,20 @@ class TestSplitConfirmation(StoreTest):
     def tearDownClass(cls):
         fn.connect = cls._connect
 
-    def when(self, stored):
-        """The local wall-clock a request would carry for a stored entry."""
-        return fn.utc_to_local(stored)
-
     def test_the_lunch_half_does_not_confirm_the_dinner_half(self):
-        dinner = {"name": "Quinoa", "date": self.when("2026-09-13 02:00:00"),
-                  "energyCalories": 233.6}
-        lunch = {"name": "Quinoa", "date": self.when("2026-09-12 19:39:00"),
-                 "energyCalories": 233.6}
+        dinner = {"name": "Quinoa", "date": self.DINNER, "energyCalories": 233.6}
+        lunch = {"name": "Quinoa", "date": self.LUNCH, "energyCalories": 233.6}
         self.assertTrue(fn.entry_exists("log", dinner))
         self.assertFalse(fn.entry_exists("log", lunch))
 
     def test_an_entry_already_there_is_not_a_write_that_just_landed(self):
-        req = {"name": "Quinoa", "date": self.when("2026-09-13 02:00:00"),
-               "energyCalories": 233.6}
+        req = {"name": "Quinoa", "date": self.DINNER, "energyCalories": 233.6}
         before = fn.matching_ids("log", req)
         self.assertTrue(before)
         self.assertFalse(fn.entry_exists("log", req, before))
 
     def test_calories_separate_two_halves_logged_in_the_same_minute(self):
-        same_minute = {"name": "Quinoa", "date": self.when("2026-09-12 19:39:00"),
-                       "energyCalories": 467.0}
+        same_minute = {"name": "Quinoa", "date": self.LUNCH, "energyCalories": 467.0}
         self.assertTrue(fn.entry_exists("log", same_minute))
 
 
