@@ -127,6 +127,39 @@ way to find out is to run it once and watch.
 This is why a food reference has to be a literal baked in at build time: the obvious
 alternative, searching for it at run time, opens a picker.
 
+## The app has to be up, and "up" means two different things
+
+An intent dispatched at an app that is not running fails silently: the bridge accepts the
+request, `shortcuts run` never returns, and nothing lands — indistinguishable from the
+intents that legitimately never return. Nine backdated entries were lost that way. So
+`ensure_app_running()` is step 0 of every write, not something the caller is trusted to
+have done: `pgrep -ix`, then `open -gj -b <bundle>` if it is absent, then poll.
+
+Use `open -gj`, never a bare `open`. A bare `open` hands the file or bundle to
+LaunchServices, which can return 0 having done nothing, and -600 when the app is not
+already running.
+
+What to wait for afterwards depends on the direction:
+
+| | Wait on | Why |
+|---|---|---|
+| **Writing** through the app's intents | the process, plus a short settle | the process exists a beat before its intents answer |
+| **Reading** a CloudKit-mirrored store | the store's `-wal` mtime | `NSPersistentCloudKitContainer` mirrors in-process, so the local store only advances while the app is running |
+
+The second row is the nastier failure. A store read cold, from an app that has not been
+opened on this Mac for months, is not empty or missing — it is months out of date and
+perfectly well-formed, so the read lies rather than fails. Polling `-wal` until it moves
+(a few seconds, in practice) is the only signal that mirroring has actually delivered, and
+a timeout there means "no fresh data", not "the app failed to start".
+
+FoodNoms writes through its own intents rather than being read cold, so this CLI waits on
+the process; it snapshots the store with its `-wal` and `-shm` before every read, which
+turns a stale mirror into stale data rather than a missing file. Anything that reads a
+mirrored store it does not also write wants the `-wal` wait instead.
+
+Launching survives a locked screen. Importing a Shortcut does not — see *Importing is not
+silent* below.
+
 ## How to learn a shape you cannot guess
 
 Guessing entity serializations is a losing game. Read one back instead:
