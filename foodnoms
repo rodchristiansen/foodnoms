@@ -1276,6 +1276,24 @@ def main():
         return
 
     if a.cmd in ("log", "create-food"):
+        # A quick entry with some macros and not others is the one request that
+        # cannot be answered headlessly. `requireMacros` makes the intent ask
+        # for whichever it was not given, FoodNoms puts up its own sheet, and
+        # nothing can type into it — so the run sits until the timeout kills it
+        # and reports "Running was cancelled", which reads like a broken bridge
+        # rather than a missing number. Refuse instead, and say which are
+        # missing; a genuine zero is a zero the caller can pass.
+        if a.cmd == "log":
+            macros = ("energyCalories", "protein", "carbs", "fat")
+            given = [m for m in macros if getattr(a, m, None) is not None]
+            if given and len(given) < len(macros):
+                flags = {"energyCalories": "--calories", "protein": "--protein",
+                         "carbs": "--carbs", "fat": "--fat"}
+                missing = " ".join(flags[m] for m in macros if m not in given)
+                sys.exit(f"log: give all four macros or none — FoodNoms asks for "
+                         f"the rest in a dialog no script can answer. Missing: "
+                         f"{missing}. Pass 0 where the food has none.")
+
         fields = {k: v for k, v in vars(a).items()
                   if k not in ("cmd", "json", "queue_only", "meal")}
         cmd = a.cmd

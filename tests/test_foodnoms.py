@@ -9,6 +9,7 @@ import importlib.util
 import os
 import re
 import sqlite3
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -546,3 +547,28 @@ class TestDayShowsMeal(StoreTest):
 
     def test_an_unfiled_entry_has_none(self):
         self.assertIsNone(self.food("Chia Seeds", "2026-09-05")["meal"])
+
+
+class TestPartialMacrosRefused(unittest.TestCase):
+    """Some macros and not others is the one request no script can finish.
+
+    `requireMacros` makes the intent ask for whichever it was not given,
+    FoodNoms puts up its own sheet, and nothing can type into it: the run sits
+    until the timeout kills it and reports "Running was cancelled", which reads
+    like a broken bridge rather than a missing number.
+    """
+
+    def run_cli(self, *args):
+        return subprocess.run([sys.executable, os.path.join(HERE, os.pardir, "foodnoms"), *args],
+                              capture_output=True, text=True, stdin=subprocess.DEVNULL)
+
+    def test_a_partial_set_is_refused_before_anything_is_dispatched(self):
+        r = self.run_cli("log", "Probe", "--calories", "100")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("--protein", r.stderr)
+        self.assertIn("--fat", r.stderr)
+
+    def test_the_message_names_only_what_is_missing(self):
+        r = self.run_cli("log", "Probe", "--calories", "100", "--protein", "1", "--carbs", "2")
+        self.assertIn("--fat", r.stderr)
+        self.assertNotIn("--protein", r.stderr)

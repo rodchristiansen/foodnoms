@@ -224,3 +224,9 @@ mistaken for the way things have to be.
 - `day` says which meal each entry was filed under. The column holds an id and FoodNoms'
   own six types carry no name in the store, so an entry sitting in Lunch read as
   `meal: null` — and anything rewriting an entry had nothing to put it back with.
+
+- `log` refuses a partial macro set instead of hanging on it. `requireMacros` makes the
+  intent ask for whichever of calories, protein, carbs and fat it was not given, and
+  FoodNoms raises its own sheet that no script can type into — so the run sat until the
+  timeout killed it and reported "Running was cancelled", which reads like a broken
+  bridge. Give all four or none; pass 0 where the food has none.
