@@ -572,3 +572,41 @@ class TestPartialMacrosRefused(unittest.TestCase):
         r = self.run_cli("log", "Probe", "--calories", "100", "--protein", "1", "--carbs", "2")
         self.assertIn("--fat", r.stderr)
         self.assertNotIn("--protein", r.stderr)
+
+
+class TestCreateFoodConfirmation(StoreTest):
+    """A create is confirmed by the food it leaves in the library.
+
+    `matching_ids` answered every command but `log` with an empty set, so
+    `entry_exists` was permanently false for a create: the dispatch burned its
+    whole settle window, reported "no entry appeared before the cap", and left
+    the request queued. The next drain fired it again — which is how a library
+    ends up with two foods of the same name — and a create that had actually
+    landed was indistinguishable from one that had not.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls._connect = fn.connect
+        fn.connect = lambda path=None: cls._connect(cls.db)
+
+    @classmethod
+    def tearDownClass(cls):
+        fn.connect = cls._connect
+
+    def test_a_food_already_in_the_library_is_found(self):
+        self.assertTrue(fn.matching_ids("create-food", {"name": "Unlogged Supplement"}))
+
+    def test_a_food_that_was_never_created_is_not(self):
+        self.assertFalse(fn.matching_ids("create-food", {"name": "PrEP"}))
+
+    def test_a_create_that_landed_confirms_against_the_baseline(self):
+        before = fn.matching_ids("create-food", {"name": "Unlogged Supplement"})
+        self.assertFalse(
+            fn.entry_exists("create-food", {"name": "Unlogged Supplement"}, before))
+        self.assertTrue(
+            fn.entry_exists("create-food", {"name": "Unlogged Supplement"}, frozenset()))
+
+    def test_other_commands_still_match_nothing(self):
+        self.assertEqual(fn.matching_ids("delete", {"name": "Unlogged Supplement"}), set())
