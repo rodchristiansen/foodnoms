@@ -610,3 +610,18 @@ class TestCreateFoodConfirmation(StoreTest):
 
     def test_other_commands_still_match_nothing(self):
         self.assertEqual(fn.matching_ids("delete", {"name": "Unlogged Supplement"}), set())
+
+
+class TestLogMealConfirmation(TestSplitConfirmation):
+    """`log --meal` dispatches as `log-meal` and must confirm the same way.
+
+    It was missing from matching_ids, so a meal-typed log that landed was
+    never seen: the poll ran to its cap, the CLI said "queued", and the queue
+    kept the request to fire again — a duplicate waiting for the next drain.
+    """
+
+    def test_a_meal_typed_log_is_confirmed_like_a_plain_one(self):
+        dinner = {"name": "Quinoa", "date": self.DINNER, "energyCalories": 233.6}
+        self.assertEqual(fn.matching_ids("log-meal", dinner),
+                         fn.matching_ids("log", dinner))
+        self.assertTrue(fn.entry_exists("log-meal", dinner))
