@@ -780,6 +780,9 @@ def queued():
                   if n.endswith(".json"))
 
 
+LOG_COMMANDS = ("log", "log-meal")
+
+
 def matching_ids(command, params):
     """The ids of entries that look like what this request would write.
 
@@ -815,7 +818,12 @@ def matching_ids(command, params):
         except sqlite3.Error:
             return set()
         return {r["foodID"] for r in rows if r["foodID"]}
-    if command != "log":
+    # `log --meal` dispatches as `log-meal`: the same write, reaching the
+    # entity-typed mealType through a GetMealTypeIntent chain. Leaving it out
+    # here made every meal-typed log unconfirmable — it landed, the poll never
+    # saw it, the cap reported failure, and the queue kept it pending to be
+    # fired again by the next drain.
+    if command not in LOG_COMMANDS:
         return set()
     name = params.get("name")
     asked = (params.get("date") or "").replace("T", " ")
@@ -910,7 +918,7 @@ def dispatch(command, params, settle=45):
         # meal is logged twice — which is exactly how two Probe entries appeared
         # ten seconds apart. A missing entry is cheap to re-check; a duplicate
         # costs a manual delete.
-        if command == "log":
+        if command in LOG_COMMANDS:
             for _ in range(8):
                 if entry_exists(command, params, before):
                     break
