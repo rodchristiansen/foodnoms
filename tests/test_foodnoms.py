@@ -625,3 +625,31 @@ class TestLogMealConfirmation(TestSplitConfirmation):
         self.assertEqual(fn.matching_ids("log-meal", dinner),
                          fn.matching_ids("log", dinner))
         self.assertTrue(fn.entry_exists("log-meal", dinner))
+
+
+class TestBridgeWhenTheLibraryIsUnreadable(unittest.TestCase):
+    """The launchd queue agent cannot read Shortcuts.sqlite, so it sees an
+    empty library. It used to fall back to the bare "FoodNoms Bridge" — a
+    Shortcut that does not exist — and hold the runtime while writes queued
+    behind it failed. It now uses the last bridge an able process resolved."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self._names, self._cache = fn.library_names, fn.BRIDGE_CACHE
+        fn.BRIDGE_CACHE = os.path.join(self.tmp, "bridge")
+        os.environ.pop("FOODNOMS_BRIDGE", None)
+
+    def tearDown(self):
+        fn.library_names, fn.BRIDGE_CACHE = self._names, self._cache
+
+    def test_a_readable_library_records_the_bridge_it_found(self):
+        fn.library_names = lambda: ["FoodNoms Bridge 2026.09.12.2049"]
+        self.assertEqual(fn.find_bridge(), "FoodNoms Bridge 2026.09.12.2049")
+        with open(fn.BRIDGE_CACHE) as fh:
+            self.assertEqual(fh.read(), "FoodNoms Bridge 2026.09.12.2049")
+
+    def test_an_unreadable_library_uses_the_recorded_bridge(self):
+        with open(fn.BRIDGE_CACHE, "w") as fh:
+            fh.write("FoodNoms Bridge 2026.09.12.2049")
+        fn.library_names = lambda: []
+        self.assertEqual(fn.find_bridge(), "FoodNoms Bridge 2026.09.12.2049")

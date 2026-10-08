@@ -91,6 +91,9 @@ def library_names():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+BRIDGE_CACHE = os.path.expanduser("~/.local/state/foodnoms/bridge")
+
+
 def find_bridge():
     """The bridge to dispatch through: the newest build in the library.
 
@@ -104,10 +107,26 @@ def find_bridge():
     override = os.environ.get("FOODNOMS_BRIDGE")
     if override:
         return override
-    stamped = sorted((m.group(1), n) for n in library_names()
-                     if (m := BRIDGE_STAMP.match(n)))
+    names = library_names()
+    stamped = sorted((m.group(1), n) for n in names if (m := BRIDGE_STAMP.match(n)))
     if stamped:
+        try:
+            os.makedirs(os.path.dirname(BRIDGE_CACHE), exist_ok=True)
+            with open(BRIDGE_CACHE, "w") as fh:
+                fh.write(stamped[-1][1])
+        except OSError:
+            pass
         return stamped[-1][1]
+    # An empty library is almost never true; it is a process that cannot read
+    # Shortcuts.sqlite — the launchd queue agent has no Full Disk Access. It
+    # then fell through to the bare prefix, ran a Shortcut that does not
+    # exist, and held the Shortcuts runtime while every other write behind it
+    # failed. The last name an able process resolved is the right answer.
+    if not names and os.path.exists(BRIDGE_CACHE):
+        with open(BRIDGE_CACHE) as fh:
+            cached = fh.read().strip()
+        if cached:
+            return cached
     # Pre-stamp builds, newest-looking last.
     legacy = sorted(n for n in library_names() if n.startswith(BRIDGE_PREFIX))
     return legacy[-1] if legacy else BRIDGE_PREFIX
@@ -1250,9 +1269,16 @@ def main():
         when = a.to_date or utc_to_local(e["date"])
         target_day = when[:10]
 
-        good, detail = dispatch("log", {"name": e["name"], "date": when, **scaled})
+        # The replacement keeps the meal the original was filed under. A plain
+        # `log` leaves mealType unset, and FoodNoms then files it by the clock
+        # at write time — a lunch edited at half past eleven at night came
+        # back as Dinner. log-meal is the branch that carries it.
+        relog, fields = "log", {"name": e["name"], "date": when, **scaled}
+        if e.get("meal"):
+            relog, fields["meal_index"] = "log-meal", meal_index(con, e["meal"])
+        good, detail = dispatch(relog, fields)
         if not good:
-            enqueue("log", {"name": e["name"], "date": when, **scaled})
+            enqueue(relog, fields)
             sys.exit(f"edit: the replacement did not land ({detail}). Nothing was "
                      f"deleted, and the re-log is queued — run `foodnoms flush` "
                      f"or delete the queued request if you no longer want it.")
