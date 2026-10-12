@@ -1,4 +1,4 @@
-# FoodNoms: The Power-User FoodNoms CLI
+# FoodNoms CLI
 
 FoodNoms is a fast, scriptable [FoodNoms](https://foodnoms.com) CLI for macOS, designed for
 power users and AI agents.
