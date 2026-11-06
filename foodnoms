@@ -31,6 +31,7 @@ generated bridge Shortcut.
 --json on any subcommand.
 """
 import argparse
+import atexit
 import fcntl
 import glob
 import re
@@ -166,6 +167,9 @@ def connect(path=None):
     if not store:
         sys.exit("FoodNoms store not found — is FoodNoms installed and has it run once?")
     tmp = tempfile.mkdtemp(prefix="foodnoms.")
+    # Every command copies the store, and the flush agent runs one a minute:
+    # without this, 1,071 copies filled 60 GB of $TMPDIR by 2026-11-05.
+    atexit.register(shutil.rmtree, tmp, True)
     dst = os.path.join(tmp, "db.db")
     shutil.copy2(store, dst)
     for ext in ("-wal", "-shm"):
