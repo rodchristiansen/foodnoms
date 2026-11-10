@@ -31,7 +31,7 @@ from datetime import datetime
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CLIENT_VERSION = "2700.0.4"
-BUILDER_VERSION = "1.0"
+BUILDER_VERSION = "1.1"
 
 # Shortcuts' condition codes. 4 is "is" — exact equality. 99 is "contains", and
 # using it for dispatch is how a branch for "Maca" also fires for "Macadamia
@@ -245,6 +245,7 @@ def build(manifest):
         # way to reach an entity-typed parameter at all, since Shortcuts binds
         # those from another action's output but never from a string.
         prev_uuid, prev_name = intent_uuid, spec.get("result_name", "Food Entries")
+        saved = {}
         for step in (spec.get("after") or []):
             su = str(uuid.uuid4()).upper()
             if step["do"] == "count":
@@ -272,6 +273,11 @@ def build(manifest):
                     "WFItemIndex": var_token(idx, VALUE_OUT),
                     "WFInput": output_ref(prev_uuid, prev_name)}))
                 prev_uuid, prev_name = su, "Item from List"
+                # Kept by name for a later intent that needs more than one
+                # entity: re-logging takes the food entry from one list and the
+                # meal type from another, and the chain only carries one.
+                if step.get("save_as"):
+                    saved[step["save_as"]] = (su, "Item from List")
             elif step["do"] == "intent":
                 # The point of the whole chain: an entity-typed parameter is
                 # unreachable from a string but binds from another action's
@@ -281,14 +287,34 @@ def build(manifest):
                 # just the entity it is being handed: logging with a meal type
                 # is GetMealType -> pick one -> Log, and the Log is where the
                 # food and its macros go.
-                for key in (step.get("params") or []):
+                # A field is named the same in the request and on the intent,
+                # unless given as {param: key} — re-logging carries two dates,
+                # the day the food was found on and the one it goes to.
+                for entry in (step.get("params") or []):
+                    param, key = (next(iter(entry.items())) if isinstance(entry, dict)
+                                  else (entry, entry))
                     ku = str(uuid.uuid4()).upper()
                     acts.append(action("is.workflow.actions.getvalueforkey", {
                         "UUID": ku, "WFDictionaryKey": key,
                         "WFGetDictionaryValueType": "Value",
                         "WFInput": output_ref(dict_uuid, DICT_OUT)}))
-                    p2[key] = var_token(ku, VALUE_OUT)
-                p2[step["param"]] = output_ref(prev_uuid, prev_name)
+                    p2[param] = var_token(ku, VALUE_OUT)
+                for param, spec_e in (step.get("entities") or {}).items():
+                    ident, label = str(uuid.uuid4()).upper(), str(uuid.uuid4()).upper()
+                    for u, k in ((ident, spec_e["identifier"]), (label, spec_e["display"])):
+                        acts.append(action("is.workflow.actions.getvalueforkey", {
+                            "UUID": u, "WFDictionaryKey": k,
+                            "WFGetDictionaryValueType": "Value",
+                            "WFInput": output_ref(dict_uuid, DICT_OUT)}))
+                    p2[param] = {"identifier": var_token(ident, VALUE_OUT),
+                                 "displayString": var_token(label, VALUE_OUT)}
+                for param, name in (step.get("refs") or {}).items():
+                    if name not in saved:
+                        sys.exit(f"{spec['command']}: ref {name!r} is not saved "
+                                 "by an earlier `item` step")
+                    p2[param] = output_ref(*saved[name])
+                if step.get("param"):
+                    p2[step["param"]] = output_ref(prev_uuid, prev_name)
                 p2["UUID"] = su
                 p2["ShowWhenRun"] = False
                 p2["AppIntentDescriptor"] = descriptor(bundle, step["intent"],
