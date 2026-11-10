@@ -761,8 +761,16 @@ def log_again(a):
     """
     con = connect()
     t = a.food
-    src = con.execute(f"SELECT {ENTRY_COLS}, day FROM foodEntryRecord WHERE entryID = ?",
-                      (t.upper(),)).fetchone()
+    def by_id(entry_id):
+        # Ids are stored as the raw 16 bytes, so a string never matches.
+        try:
+            blob = uuid.UUID(entry_id).bytes
+        except (ValueError, TypeError, AttributeError):
+            return None
+        return con.execute(f"SELECT {ENTRY_COLS}, day FROM foodEntryRecord "
+                           "WHERE entryID = ?", (blob,)).fetchone()
+
+    src = by_id(t)
     if src is None:
         hits = [f for f in search(con, t) if f.get("entry_id")]
         if not hits:
@@ -772,8 +780,9 @@ def log_again(a):
         if not exact and len({f["name"] for f in hits}) > 1:
             names = ", ".join(sorted({f["name"] for f in hits})[:8])
             return f"again: {t!r} matches several foods ({names}); name one exactly"
-        src = con.execute(f"SELECT {ENTRY_COLS}, day FROM foodEntryRecord WHERE entryID = ?",
-                          (pick["entry_id"],)).fetchone()
+        src = by_id(pick["entry_id"])
+        if src is None:
+            return f"again: could not read back the entry for {pick['name']}"
     e = as_food(src)
     on = (date(1970, 1, 1) + timedelta(days=int(src["day"] - UNIX_EPOCH_JD))).isoformat()
 
@@ -792,17 +801,10 @@ def log_again(a):
     to_date = a.to_date or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     to_day = to_date[:10]
     before = {x["entry_id"] for x in day(con, to_day, components=True)["entries"]}
-    measure = e.get("measure")
     fields = {"date": when, "index": matches[rank] + 1, "to_date": to_date,
               "quantity": a.quantity if a.quantity is not None else (e.get("quantity") or 1),
               "meal_index": meal_index(con, a.meal or e.get("meal") or "snack")}
-    if measure and not a.default_measure:
-        command = "relog"
-        fields["measure_id"] = json.dumps({"value": measure}, separators=(",", ":"))
-        fields["measure_label"] = (measure.get("descriptionText")
-                                   or measure.get("unit") or "serving")
-    else:
-        command = "relog-default"
+    command = "relog"
     call_bridge(command, **fields)
 
     for _ in range(10):
@@ -1177,8 +1179,6 @@ def main():
     ag.add_argument("--date", dest="to_date", type=parse_when,
                     help="when it was eaten (default now)")
     ag.add_argument("--meal", help="breakfast, lunch, dinner, snack, …")
-    ag.add_argument("--default-measure", action="store_true",
-                    help="log in the food's default measure, not the one last used")
     dl = sub.add_parser("delete", help="delete a logged entry by name or entry id")
     dl.add_argument("target", help="entry id, or a name to match in a day's log")
     dl.add_argument("--on", default=date.today().isoformat(),
