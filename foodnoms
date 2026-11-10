@@ -45,7 +45,7 @@ import sys
 import tempfile
 import time
 import uuid
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 __version__ = "0.5.0"
 
@@ -749,6 +749,75 @@ MEAL_ALIASES = {"preworkout": "pre-workout", "pre workout": "pre-workout",
                 "post-wo": "post-workout", "pre-wo": "pre-workout"}
 
 
+def log_again(a):
+    """Log a food again, as itself, through one installed bridge.
+
+    The food is an entity, and an entity binds only from a literal or from
+    another action's output. The bridge's `relog` takes the second road: it
+    fetches the day the food was last logged on, picks it by position — the
+    position resolved here against the bridge's own listing, as `delete` does —
+    and hands that entry to LogIntent. No disposable Shortcut, so no import,
+    so no unlocked screen.
+    """
+    con = connect()
+    t = a.food
+    src = con.execute(f"SELECT {ENTRY_COLS}, day FROM foodEntryRecord WHERE entryID = ?",
+                      (t.upper(),)).fetchone()
+    if src is None:
+        hits = [f for f in search(con, t) if f.get("entry_id")]
+        if not hits:
+            return f"again: nothing in the log matches {t!r}"
+        exact = [f for f in hits if (f["name"] or "").lower() == t.lower()]
+        pick = (exact or hits)[0]
+        if not exact and len({f["name"] for f in hits}) > 1:
+            names = ", ".join(sorted({f["name"] for f in hits})[:8])
+            return f"again: {t!r} matches several foods ({names}); name one exactly"
+        src = con.execute(f"SELECT {ENTRY_COLS}, day FROM foodEntryRecord WHERE entryID = ?",
+                          (pick["entry_id"],)).fetchone()
+    e = as_food(src)
+    on = (date(1970, 1, 1) + timedelta(days=int(src["day"] - UNIX_EPOCH_JD))).isoformat()
+
+    entries = day(con, on)["entries"]
+    same = [x["entry_id"] for x in entries if (x["name"] or "") == e["name"]]
+    if e["entry_id"] not in same:
+        return f"again: {e['name']} on {on} is part of a saved meal; log the meal instead"
+    rank = same.index(e["entry_id"])
+    when = f"{on} 12:00:00"
+    listed = [n for n in (call_bridge("entries", date=when) or "").splitlines() if n.strip()]
+    matches = [i for i, n in enumerate(listed) if n == e["name"]]
+    if len(matches) <= rank:
+        return (f"again: the bridge does not list {e['name']!r} for {on}, so there is "
+                "no position to take it from")
+
+    to_date = a.to_date or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    to_day = to_date[:10]
+    before = {x["entry_id"] for x in day(con, to_day, components=True)["entries"]}
+    measure = e.get("measure")
+    fields = {"date": when, "index": matches[rank] + 1, "to_date": to_date,
+              "quantity": a.quantity if a.quantity is not None else (e.get("quantity") or 1),
+              "meal_index": meal_index(con, a.meal or e.get("meal") or "snack")}
+    if measure and not a.default_measure:
+        command = "relog"
+        fields["measure_id"] = json.dumps({"value": measure}, separators=(",", ":"))
+        fields["measure_label"] = (measure.get("descriptionText")
+                                   or measure.get("unit") or "serving")
+    else:
+        command = "relog-default"
+    call_bridge(command, **fields)
+
+    for _ in range(10):
+        new = [x for x in day(connect(), to_day, components=True)["entries"]
+               if x["entry_id"] not in before and x["name"] == e["name"]]
+        if new:
+            n = new[0]
+            print(f"logged {n['name']}  {n['quantity']:g} × "
+                  f"{(n.get('measure') or {}).get('descriptionText') or n.get('unit') or ''}"
+                  f"  {to_date}  {a.meal or e.get('meal') or ''}".rstrip())
+            return 0
+        time.sleep(2)
+    return f"again: {e['name']} did not reach the log for {to_day}"
+
+
 def meal_index(con, want):
     want = MEAL_ALIASES.get(want.strip().lower(), want)
     for m in meal_types(con):
@@ -1100,6 +1169,16 @@ def main():
     sub.add_parser("goal", help="today's goal")
     sub.add_parser("flush", help="log everything queued, if the Mac can write")
     sub.add_parser("meal-types", help="the meal types, in the order the bridge picks them")
+    ag = sub.add_parser("again", help="log a food again as the food it was, with no "
+                                      "Shortcut to import — works with the screen locked")
+    ag.add_argument("food", help="a name, id:FOODID, or an entry id already in the log")
+    ag.add_argument("--quantity", type=float,
+                    help="how many of the measure (default: what was logged last time)")
+    ag.add_argument("--date", dest="to_date", type=parse_when,
+                    help="when it was eaten (default now)")
+    ag.add_argument("--meal", help="breakfast, lunch, dinner, snack, …")
+    ag.add_argument("--default-measure", action="store_true",
+                    help="log in the food's default measure, not the one last used")
     dl = sub.add_parser("delete", help="delete a logged entry by name or entry id")
     dl.add_argument("target", help="entry id, or a name to match in a day's log")
     dl.add_argument("--on", default=date.today().isoformat(),
@@ -1131,6 +1210,9 @@ def main():
     a = ap.parse_args()
     if a.cmd == "doctor":
         sys.exit(doctor())
+
+    if a.cmd == "again":
+        sys.exit(log_again(a))
 
     if a.cmd == "delete":
         con = connect()

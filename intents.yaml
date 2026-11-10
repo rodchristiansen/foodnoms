@@ -198,6 +198,74 @@ commands:
         param: foodEntries
         fixed: {deleteWithoutConfirmation: true}
 
+  - command: relog
+    intent: GetFoodEntriesIntent
+    summary: Log a food again, as the food it was, from an entry already in the log
+    # The write that used to need a disposable Shortcut per batch, and so an
+    # unlocked screen for its import. LogIntent's `foodEntry` is an entity, and
+    # entities bind from another action's output — so the food comes from the
+    # day it was last logged on, fetched and picked by position exactly as
+    # `delete` does, and the meal type from GetMealTypeIntent the same way.
+    # Nothing is baked in, so this one installed build logs any food that has
+    # ever been logged, and runs with the screen locked.
+    #
+    # `date` is the day the food is found on; `to_date` is when the new entry
+    # goes. The measure arrives as an identifier and label, the shape the
+    # generator's `entities` binds; `relog-default` leaves it out and takes the
+    # food's own default, for when that binding does not hold.
+    fixed:
+      dayOption: onDate
+    omit_required: [mealType]
+    params:
+      date: {type: text}
+    after:
+      - {do: item, index_key: index, save_as: entry}
+      - do: intent
+        intent: GetMealTypeIntent
+        fixed: {scope: allMealTypes}
+        result_name: Meal Types
+      - {do: item, index_key: meal_index, save_as: meal}
+      - do: intent
+        intent: LogIntent
+        refs: {foodEntry: entry, mealType: meal}
+        fixed:
+          type: food
+          dateTimePreference: dateAndTime
+          uncertainty: exact
+          useLastPortion: false
+        params:
+          - {date: to_date}
+          - quantity
+        entities:
+          foodMeasure: {identifier: measure_id, display: measure_label}
+
+  - command: relog-default
+    intent: GetFoodEntriesIntent
+    summary: As relog, in the food's default measure
+    fixed:
+      dayOption: onDate
+    omit_required: [mealType]
+    params:
+      date: {type: text}
+    after:
+      - {do: item, index_key: index, save_as: entry}
+      - do: intent
+        intent: GetMealTypeIntent
+        fixed: {scope: allMealTypes}
+        result_name: Meal Types
+      - {do: item, index_key: meal_index, save_as: meal}
+      - do: intent
+        intent: LogIntent
+        refs: {foodEntry: entry, mealType: meal}
+        fixed:
+          type: food
+          dateTimePreference: dateAndTime
+          uncertainty: exact
+          useLastPortion: false
+        params:
+          - {date: to_date}
+          - quantity
+
   - command: entries
     intent: GetFoodEntriesIntent
     summary: Read one day's entries back as text — the list `delete` indexes into
