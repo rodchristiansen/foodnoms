@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.0 — 2026-08-30
+## 2026.08.30.1704
 
 First cut, extracted from a personal automation engine where it had been running against a live
 Foodnoms library since 2026-08-30.
@@ -12,7 +12,7 @@ Foodnoms library since 2026-08-30.
 - `doctor` — store presence, readability, counts, and a clear failure on schema drift
 - `--json` on every subcommand
 
-## 0.2.0 — 2026-08-30
+## 2026.08.30.1725
 
 Adds the write path. Reads still go straight to SQLite; nothing ever writes the store.
 
@@ -23,7 +23,7 @@ Adds the write path. Reads still go straight to SQLite; nothing ever writes the 
 - `doctor` now reports whether the bridge is installed
 - `--json` works after the subcommand as well as before
 
-## 0.3.0 — 2026-08-30
+## 2026.08.30.2202
 
 - Reads the **live** store. Foodnoms migrated from Core Data to GRDB and moved into the app's
   sandbox container; the two earlier stores are still on disk, still answer queries, and stop in
@@ -41,7 +41,7 @@ Adds the write path. Reads still go straight to SQLite; nothing ever writes the 
   than be handed an identifier.
 - `--json` before the subcommand is no longer silently un-set by the subparser's own default.
 
-## 0.4.0 — 2026-08-31
+## 2026.08.31.0038
 
 - `docs/app-intents.md` — what Foodnoms' App Intents accept, as opposed to what their metadata
   declares. Foodnoms replaced `LogFoodIntent` and `LogDrinkIntent` with a single `LogIntent`,
@@ -148,7 +148,7 @@ It is also the first release with tests.
   matching, saved-meal exclusion and the bridge check.
 - CI on macOS and Linux, Python 3.10 and 3.13.
 - README corrected. It documented `log-weight`, `db-search` and `ask`, none of which were ever
-  implemented — 0.2.0 announced them and shipped four commands. `db-search` cannot work:
+  implemented — 2026.08.30.1725 announced them and shipped four commands. `db-search` cannot work:
   `SearchFoodnomsDatabaseIntent` presents the food picker and never returns. The other two are
   untested and do not ship until they have been run.
 
