@@ -47,7 +47,7 @@ import time
 import uuid
 from datetime import date, datetime, timedelta, timezone
 
-__version__ = "0.6.0"
+__version__ = "2026.11.15.1057"
 
 BUNDLE = "com.algebraiclabs.foodnoms"
 # Importing a Shortcut does not replace a same-named one already in the library

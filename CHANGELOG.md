@@ -161,7 +161,7 @@ from Apple's metadata.
 `docs/feature-requests.md` collects what only Foodnoms can fix, so the workarounds here are not
 mistaken for the way things have to be.
 
-## 0.6.0 — 2026-11-15
+## 2026.11.15.1057
 
 - Spelled Foodnoms, lowercase n, as the app does, in the CLI, docs, tests and wiki. Only
   names the app itself defines keep its spelling, such as `FoodNoms.sqlite`.
