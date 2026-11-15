@@ -18,7 +18,7 @@ Two abandoned stores are still on disk and both look convincing:
 
 | Path | Format | Last written |
 |---|---|---|
-| `~/Library/Group Containers/group.com.algebraiclabs.foodnoms/Foodnoms.sqlite` | Core Data | 2022 |
+| `~/Library/Group Containers/group.com.algebraiclabs.foodnoms/FoodNoms.sqlite` | Core Data | 2022 |
 | `…/group.com.algebraiclabs.foodnoms/com.algebraiclabs.foodnoms/db.db` | GRDB | 2025 |
 
 Reading either returns years-old data with no error. `doctor` reports which store is live and

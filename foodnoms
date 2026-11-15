@@ -143,7 +143,7 @@ BRIDGE = find_bridge()
 # sandbox container, whose directory name is a random UUID that differs per
 # machine — so it has to be discovered, never hardcoded.
 LEGACY = [
-    os.path.expanduser(f"~/Library/Group Containers/group.{BUNDLE}/Foodnoms.sqlite"),
+    os.path.expanduser(f"~/Library/Group Containers/group.{BUNDLE}/FoodNoms.sqlite"),
     os.path.expanduser(f"~/Library/Group Containers/group.{BUNDLE}/{BUNDLE}/db.db"),
 ]
 
