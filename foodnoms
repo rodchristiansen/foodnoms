@@ -58,8 +58,8 @@ BUNDLE = "com.algebraiclabs.foodnoms"
 # delete, so the only way to ship a build that adds a command is under a name
 # nothing holds yet. The old "Foodnoms Bridge" stays in the library, answering
 # with whatever it was built from; nothing dispatches to it any more. Matching
-# ignores case, so builds installed as "FoodNoms Bridge" before the rename are
-# still found.
+# ignores case, so builds installed under the old capital-N spelling are still
+# found.
 BRIDGE_PREFIX = "Foodnoms Bridge"
 BRIDGE_STAMP = re.compile(r"^" + re.escape(BRIDGE_PREFIX) +
                           r" (\d{4}\.\d{2}\.\d{2}\.\d{4})$", re.I)
@@ -143,7 +143,7 @@ BRIDGE = find_bridge()
 # sandbox container, whose directory name is a random UUID that differs per
 # machine — so it has to be discovered, never hardcoded.
 LEGACY = [
-    os.path.expanduser(f"~/Library/Group Containers/group.{BUNDLE}/FoodNoms.sqlite"),
+    os.path.expanduser(f"~/Library/Group Containers/group.{BUNDLE}/Foodnoms.sqlite"),
     os.path.expanduser(f"~/Library/Group Containers/group.{BUNDLE}/{BUNDLE}/db.db"),
 ]
 
