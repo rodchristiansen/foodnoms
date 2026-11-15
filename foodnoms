@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
-"""foodnoms — the FoodNoms CLI for macOS and AI agents.
+"""foodnoms — the Foodnoms CLI for macOS and AI agents.
 
-FoodNoms keeps its data in a local GRDB (SQLite) database inside the app's
+Foodnoms keeps its data in a local GRDB (SQLite) database inside the app's
 sandbox container. Every logged entry is denormalized — it carries the food's
 name, brand, barcode, unit, serving measure and full nutrition — which makes the
 log itself the library: anything ever scanned or logged is queryable here,
 offline, with no API and no account.
 
 Read-only by design. The store is snapshotted before every read so a running
-FoodNoms.app never contends on the write-ahead log, and nothing is ever written
+Foodnoms.app never contends on the write-ahead log, and nothing is ever written
 back: the store is CloudKit-mirrored, so a row inserted behind the app's back
-would never sync. Writes go through FoodNoms' own App Intents, dispatched by a
+would never sync. Writes go through Foodnoms' own App Intents, dispatched by a
 generated bridge Shortcut.
 
   foodnoms catalog [--min-count N] [--since YYYY-MM-DD]
@@ -56,11 +56,13 @@ BUNDLE = "com.algebraiclabs.foodnoms"
 # Version the name, because a Shortcut cannot be replaced. Importing does not
 # overwrite a same-named one — it is refused — and the `shortcuts` CLI cannot
 # delete, so the only way to ship a build that adds a command is under a name
-# nothing holds yet. The old "FoodNoms Bridge" stays in the library, answering
-# with whatever it was built from; nothing dispatches to it any more.
-BRIDGE_PREFIX = "FoodNoms Bridge"
+# nothing holds yet. The old "Foodnoms Bridge" stays in the library, answering
+# with whatever it was built from; nothing dispatches to it any more. Matching
+# ignores case, so builds installed as "FoodNoms Bridge" before the rename are
+# still found.
+BRIDGE_PREFIX = "Foodnoms Bridge"
 BRIDGE_STAMP = re.compile(r"^" + re.escape(BRIDGE_PREFIX) +
-                          r" (\d{4}\.\d{2}\.\d{2}\.\d{4})$")
+                          r" (\d{4}\.\d{2}\.\d{2}\.\d{4})$", re.I)
 SHORTCUTS_DB = os.path.expanduser("~/Library/Shortcuts/Shortcuts.sqlite")
 
 
@@ -98,7 +100,7 @@ BRIDGE_CACHE = os.path.expanduser("~/.local/state/foodnoms/bridge")
 def find_bridge():
     """The bridge to dispatch through: the newest build in the library.
 
-    Builds are stamped `FoodNoms Bridge YYYY.MM.DD.HHMM` because importing a
+    Builds are stamped `Foodnoms Bridge YYYY.MM.DD.HHMM` because importing a
     Shortcut never replaces one of the same name — a rebuild under a fixed name
     either is refused or lands beside the old copy, and the `shortcuts` CLI
     cannot delete. Stamping makes an upgrade a rebuild, and picking the highest
@@ -129,13 +131,13 @@ def find_bridge():
         if cached:
             return cached
     # Pre-stamp builds, newest-looking last.
-    legacy = sorted(n for n in library_names() if n.startswith(BRIDGE_PREFIX))
+    legacy = sorted(n for n in library_names() if n.lower().startswith(BRIDGE_PREFIX.lower()))
     return legacy[-1] if legacy else BRIDGE_PREFIX
 
 
 BRIDGE = find_bridge()
 
-# FoodNoms has moved its store twice. The Core Data one in the app group
+# Foodnoms has moved its store twice. The Core Data one in the app group
 # container stops in 2022 and the group-container GRDB copy stops in 2025; both
 # are still on disk and both look plausible. The live store is in the app's
 # sandbox container, whose directory name is a random UUID that differs per
@@ -147,7 +149,7 @@ LEGACY = [
 
 
 def find_store():
-    """The db.db belonging to FoodNoms' sandbox container."""
+    """The db.db belonging to Foodnoms' sandbox container."""
     pattern = os.path.expanduser("~/Library/Containers/*/Data/Documents/db.db")
     for path in glob.glob(pattern):
         container = path.split("/Data/")[0]
@@ -165,7 +167,7 @@ def find_store():
 def connect(path=None):
     store = path or find_store()
     if not store:
-        sys.exit("FoodNoms store not found — is FoodNoms installed and has it run once?")
+        sys.exit("Foodnoms store not found — is Foodnoms installed and has it run once?")
     tmp = tempfile.mkdtemp(prefix="foodnoms.")
     # Every command copies the store, and the flush agent runs one a minute:
     # without this, 1,071 copies filled 60 GB of $TMPDIR by 2026-11-05.
@@ -247,7 +249,7 @@ def as_food(row):
     d = {"name": row["name"], "brand": row["brandOwner"], "barcode": row["barcode"],
          "food_id": row["foodID"], "entry_id": as_uuid(row["entryID"]),
          "unit": unit, "unit_quantity": value, "quantity": row["quantity"]}
-    # The measure dict itself, not just its unit and size: FoodNoms' Log intent
+    # The measure dict itself, not just its unit and size: Foodnoms' Log intent
     # takes a measure as a JSON document that is exactly this, so anything
     # generating an action needs the whole thing. `measures` is every portion the
     # food offers, which is how a recipe asks for "in fl oz" rather than "in cups".
@@ -266,7 +268,7 @@ def as_food(row):
 def barcodes(con):
     """Every barcode the store knows, and the food behind it.
 
-    A phone cannot ask FoodNoms whether it recognises a barcode — both search
+    A phone cannot ask Foodnoms whether it recognises a barcode — both search
     intents present a picker and block — so the answer has to travel to the
     device ahead of time. This is that table: scanned in a shop, looked up in a
     Shortcut with a dictionary get, no intent involved.
@@ -396,7 +398,7 @@ UNIX_EPOCH_JD = 2440587.5
 
 
 def julian_day(when):
-    """FoodNoms' own key for a calendar day, as a Julian day number."""
+    """Foodnoms' own key for a calendar day, as a Julian day number."""
     d = datetime.strptime(when, "%Y-%m-%d").date()
     return (d - date(1970, 1, 1)).days + UNIX_EPOCH_JD
 
@@ -423,7 +425,7 @@ def day(con, when, components=False):
       ORDER BY date
     """, (julian_day(when),)).fetchall()
     # Which meal each entry was filed under, by name. The column holds an id
-    # and FoodNoms' own six types carry no name in the store, so an entry filed
+    # and Foodnoms' own six types carry no name in the store, so an entry filed
     # to Lunch read as nothing at all — and anything rewriting an entry then had
     # no way to put it back in the meal it came from.
     names = {m["id"]: m["name"] for m in meal_types(con)}
@@ -458,7 +460,7 @@ def meals(con, name=None, kind=MEAL):
             f"SELECT {ENTRY_COLS} FROM foodEntryRecord WHERE collectionEditID = ? "
             "ORDER BY collectionSortIndex", (c["collectionEditID"],))]
         blob = c["collectionID"]
-        # The id is stored as the raw 16 bytes of a UUID; FoodNoms' LogIntent
+        # The id is stored as the raw 16 bytes of a UUID; Foodnoms' LogIntent
         # references a saved meal by that UUID in its canonical string form.
         meal_id = as_uuid(blob)
         out.append({"name": c["name"], "meal_id": meal_id, "items": items})
@@ -470,7 +472,7 @@ def parse_when(text):
 
     The intent takes a Date, and Shortcuts coerces the text token it is handed,
     so what matters is handing it something unambiguous. A bare date logs at
-    noon rather than midnight: FoodNoms buckets an entry by its local day, and
+    noon rather than midnight: Foodnoms buckets an entry by its local day, and
     midnight is the boundary where a timezone offset moves it to the day before.
     """
     text = (text or "").strip()
@@ -493,7 +495,7 @@ def food_entity_id(food_id):
     """The `foodEntry` identifier LogIntent wants: a document, not an id.
 
     It names the service the food came from and its id within that service —
-    `foodNoms` for anything out of FoodNoms' database, `manualEntry` for a food
+    `foodNoms` for anything out of Foodnoms' database, `manualEntry` for a food
     created in the app — and it is what keeps a re-logged entry the same food,
     barcode and all, rather than a name with macros attached.
     """
@@ -535,9 +537,9 @@ def utc_to_local(stamp):
 
 
 def ensure_app_running(timeout=20):
-    """Launch FoodNoms and wait for it, before any intent is dispatched.
+    """Launch Foodnoms and wait for it, before any intent is dispatched.
 
-    An intent dispatched at a FoodNoms that is not running fails silently: the
+    An intent dispatched at a Foodnoms that is not running fails silently: the
     bridge accepts the request, `shortcuts run` never returns, and the entry
     never lands — indistinguishable from the known does-not-return case. Nine
     backdated meal entries were lost this way. Launching is therefore step 0 of
@@ -561,7 +563,7 @@ def call_bridge(command, timeout=90, **params):
     """Dispatch one App Intent through the bridge Shortcut.
 
     macOS cannot invoke another app's App Intent directly, so a Shortcut is the
-    only supported write path. Some FoodNoms intents complete the write and then
+    only supported write path. Some Foodnoms intents complete the write and then
     do not return — the entry lands, `shortcuts run` simply never exits — so
     this bounds the wait rather than hanging the caller forever.
 
@@ -569,10 +571,10 @@ def call_bridge(command, timeout=90, **params):
     waiting: it pkills `shortcuts run`, and a write still in flight dies with
     it. At 25s that lost every log while reporting the ambiguous "the intent did
     not return", which reads like the known does-not-return case and is instead
-    this tool killing its own write. A cold FoodNoms takes well over 30s.
+    this tool killing its own write. A cold Foodnoms takes well over 30s.
     """
     if not ensure_app_running():
-        sys.exit("FoodNoms would not launch; the intent would fail silently.")
+        sys.exit("Foodnoms would not launch; the intent would fail silently.")
     payload = {"command": command}
     payload.update({k: v for k, v in params.items() if v is not None})
     tmp = tempfile.mkdtemp(prefix="foodnoms.")
@@ -603,7 +605,7 @@ def bridge_installed(listing, bridge=BRIDGE):
     """Whether `shortcuts list` output contains the bridge, by exact name.
 
     Exact equality, never a substring. Installing a Shortcut does not replace an
-    existing one of the same name — you get "FoodNoms Bridge 2" beside it —
+    existing one of the same name — you get "Foodnoms Bridge 2" beside it —
     so a substring test reports the write path healthy while `shortcuts run`
     fails on a name that is not there. Returns the near-misses too, because that
     is the case worth naming in the diagnosis.
@@ -616,8 +618,8 @@ def doctor():
     print("foodnoms doctor\n")
     store = find_store()
     if not store:
-        print("  [FAIL] no FoodNoms store found in any sandbox container")
-        print("         Is FoodNoms installed, and has it been opened at least once?")
+        print("  [FAIL] no Foodnoms store found in any sandbox container")
+        print("         Is Foodnoms installed, and has it been opened at least once?")
         return 1
     print(f"  [OK]   store {store}")
     print(f"         {os.path.getsize(store) / 1_048_576:.1f} MB, modified "
@@ -635,7 +637,7 @@ def doctor():
         saved = len(meals(con))
     except sqlite3.Error as e:
         print(f"  [FAIL] schema not as expected: {e}")
-        print("         FoodNoms may have migrated its database again.")
+        print("         Foodnoms may have migrated its database again.")
         return 1
     print(f"  [OK]   {entries} logged entries, newest {newest}")
     print(f"  [OK]   {foods} distinct foods")
@@ -702,7 +704,7 @@ def screen_is_locked():
     return i != -1 and "<true/>" in body[i:i + 120]
 
 
-# `requireMacros: true` on LogQuickEntryIntent makes FoodNoms insist on these
+# `requireMacros: true` on LogQuickEntryIntent makes Foodnoms insist on these
 # four. It does not fail when one is missing — it puts up its own prompt ("How
 # much total fat?") and waits, so a headless run blocks forever on a dialog
 # nobody can answer and the request sits claimed in the queue. Fiber, sugars and
@@ -718,7 +720,7 @@ def missing_macros(params):
 
 
 def meal_types(con):
-    """The meal types in the order FoodNoms' allMealTypes returns them.
+    """The meal types in the order Foodnoms' allMealTypes returns them.
 
     `mealTypeRecord.sortIndex` is the app's own ordering, and the bridge picks a
     meal by position because Shortcuts' filter actions cannot see an entity's
@@ -728,7 +730,7 @@ def meal_types(con):
     rows = con.execute("""SELECT mealTypeID, name, sortIndex, disabled
                           FROM mealTypeRecord ORDER BY sortIndex""").fetchall()
     # Defaults carry no name; their identity is the id, in the app's own order.
-    # Five and six are Pre-Workout and Post-Workout — FoodNoms shows those
+    # Five and six are Pre-Workout and Post-Workout — Foodnoms shows those
     # names in its own meal picker but stores nothing, so calling them meal5
     # and meal6 meant a real, named, usable meal type could not be asked for.
     # Confirmed against an entry filed to Post-Workout in the app: mealTypeID 6.
@@ -830,7 +832,7 @@ def meal_index(con, want):
 
 
 # Every nutrient CreateFoodIntent accepts, as a flag. Units are the ones
-# FoodNoms stores and shows on a label: grams for macros, mg for minerals and
+# Foodnoms stores and shows on a label: grams for macros, mg for minerals and
 # the water-soluble vitamins, mcg for vitamins A, D, K and B12, folate, biotin,
 # selenium, chromium, molybdenum and iodine. Supplements are why the panel is
 # complete — a capsule is 0 kcal and nothing but micronutrients.
@@ -962,7 +964,7 @@ def dispatch(command, params, settle=45):
     a write that never appears at all.
     """
     if not ensure_app_running():
-        return False, "FoodNoms would not launch"
+        return False, "Foodnoms would not launch"
     # Read before writing: every confirmation below asks whether something new
     # appeared, which is only answerable against what was already there.
     before = matching_ids(command, params)
@@ -1005,7 +1007,7 @@ def dispatch(command, params, settle=45):
         # left to do; killing it here is what the flat timeout used to do at 90s.
         if proc.poll() is None:
             proc.kill()
-        # Settle before declaring failure. FoodNoms commits through its own WAL
+        # Settle before declaring failure. Foodnoms commits through its own WAL
         # and the snapshot taken here can be a beat behind it, so a write that
         # has in fact landed reads as missing for a second or two. Reporting
         # failure then leaves the request pending, the agent retries it, and the
@@ -1036,7 +1038,7 @@ def flush(verbose=True, only=None):
 
     `only` limits the drain to a single request. That matters more than it
     looks: `log` used to enqueue and then drain everything, so a request whose
-    write had landed but whose verification lagged behind FoodNoms\' WAL stayed
+    write had landed but whose verification lagged behind Foodnoms\' WAL stayed
     pending and was re-dispatched by the NEXT log\'s flush — nine sequential
     logs gave eight chances to double-write, which is exactly what happened to
     a nine-item meal. A log now drains only what it just queued.
@@ -1147,7 +1149,7 @@ def main():
     lg.add_argument("--queue-only", action="store_true",
                     help="queue without attempting to write")
     lg.add_argument("--meal", help="breakfast, lunch, dinner or snack. Omitted, "
-                                   "FoodNoms picks one and often picks wrong")
+                                   "Foodnoms picks one and often picks wrong")
     lg.add_argument("name")
     lg.add_argument("--date", dest="date", type=parse_when,
                     help="when to log it: YYYY-MM-DD, 'YYYY-MM-DD HH:MM', or an "
@@ -1262,7 +1264,7 @@ def main():
                 sys.exit(f"delete: {h['name']!r} is entry {rank + 1} of that name in "
                          f"the store for {a.on}, and the intent returns only "
                          f"{len(matches)}. There is no position to delete safely — "
-                         "delete it in FoodNoms.")
+                         "delete it in Foodnoms.")
             targets.append((matches[rank], h))
         # Sort on the index alone: a tuple sort falls through to comparing the
         # entry dicts when two targets share an index, and dicts do not order.
@@ -1277,7 +1279,7 @@ def main():
         return
 
     if a.cmd == "edit":
-        # FoodNoms has no edit-a-logged-entry intent among its 45 —
+        # Foodnoms has no edit-a-logged-entry intent among its 45 —
         # EditFoodIntent edits a library food's definition, not an entry in a day
         # — so an edit is delete plus re-log. The re-log goes through LogIntent
         # with the food and measure the entry already carried, not through quick
@@ -1308,7 +1310,7 @@ def main():
         if qty <= 0:
             sys.exit(f"edit: quantity would be {qty:g}. To remove it, use `delete`.")
 
-        # FoodNoms has no edit-a-logged-entry intent, so an edit is delete plus
+        # Foodnoms has no edit-a-logged-entry intent, so an edit is delete plus
         # re-log — and the re-log is the hard half. LogIntent's `food` is an
         # entity, which binds only from a literal written into the action at
         # build time or from another action's output; the search intents that
@@ -1334,7 +1336,7 @@ def main():
                 f"turn {e['name']!r} into a name and four macros — losing its "
                 f"food, measure, barcode and micronutrients. Nothing has been "
                 f"changed. Pass --quick-entry to accept that, or edit it in "
-                f"FoodNoms, or re-log it from a Shortcut with the food baked in.")
+                f"Foodnoms, or re-log it from a Shortcut with the food baked in.")
 
         # Which occurrence of this name the entry is, worked out before the
         # replacement adds another. The intent addresses entries by position in
@@ -1356,7 +1358,7 @@ def main():
         target_day = when[:10]
 
         # The replacement keeps the meal the original was filed under. A plain
-        # `log` leaves mealType unset, and FoodNoms then files it by the clock
+        # `log` leaves mealType unset, and Foodnoms then files it by the clock
         # at write time — a lunch edited at half past eleven at night came
         # back as Dinner. log-meal is the branch that carries it.
         relog, fields = "log", {"name": e["name"], "date": when, **scaled}
@@ -1378,12 +1380,12 @@ def main():
             sys.exit(f"edit: logged the replacement, but the intent does not "
                      f"return {e['name']!r} at position {rank + 1} for {a.on}, so "
                      f"there is nothing safe to delete. The day now counts it "
-                     f"twice — remove the old one in FoodNoms.")
+                     f"twice — remove the old one in Foodnoms.")
         call_bridge("delete", date=idx_when, index=matches[rank] + 1)
         if [x for x in day(connect(), a.on)["entries"] if x["entry_id"] == e["entry_id"]]:
             sys.exit(f"edit: logged the replacement but could not delete the "
                      f"original, so {a.on} counts {e['name']} twice. Remove it in "
-                     f"FoodNoms.")
+                     f"Foodnoms.")
         unit_name = "quick entry"
         print(f"{e['name']}: {e['quantity']:g} → {qty:g} x {unit_name}"
               + (f", moved to {target_day}" if target_day != a.on else ""))
@@ -1421,7 +1423,7 @@ def main():
     if a.cmd in ("log", "create-food"):
         # A quick entry with some macros and not others is the one request that
         # cannot be answered headlessly. `requireMacros` makes the intent ask
-        # for whichever it was not given, FoodNoms puts up its own sheet, and
+        # for whichever it was not given, Foodnoms puts up its own sheet, and
         # nothing can type into it — so the run sits until the timeout kills it
         # and reports "Running was cancelled", which reads like a broken bridge
         # rather than a missing number. Refuse instead, and say which are
@@ -1433,7 +1435,7 @@ def main():
                 flags = {"energyCalories": "--calories", "protein": "--protein",
                          "carbs": "--carbs", "fat": "--fat"}
                 missing = " ".join(flags[m] for m in macros if m not in given)
-                sys.exit(f"log: give all four macros or none — FoodNoms asks for "
+                sys.exit(f"log: give all four macros or none — Foodnoms asks for "
                          f"the rest in a dialog no script can answer. Missing: "
                          f"{missing}. Pass 0 where the food has none.")
 
@@ -1448,7 +1450,7 @@ def main():
         if a.cmd == "log":
             gap = missing_macros(fields)
             if gap:
-                sys.exit(f"log needs {', '.join(gap)}: FoodNoms is configured to "
+                sys.exit(f"log needs {', '.join(gap)}: Foodnoms is configured to "
                          "require calories, protein, carbs and fat, and it asks "
                          "for a missing one in a dialog rather than failing — "
                          "which never returns on a headless run. Pass 0 if a "
@@ -1487,7 +1489,7 @@ def main():
         res = search(con, a.term)
         if a.cmd == "resolve":
             if not res:
-                sys.exit(f"no FoodNoms food matches: {a.term}")
+                sys.exit(f"no Foodnoms food matches: {a.term}")
             res = res[:1]
         if a.json:
             print(json.dumps(res, indent=2)); return
@@ -1511,7 +1513,7 @@ def main():
     elif a.cmd == "resolve-meal":
         res = [mm for mm in meals(con, a.name) if mm["meal_id"]]
         if not res:
-            sys.exit(f"no saved FoodNoms meal matches: {a.name}")
+            sys.exit(f"no saved Foodnoms meal matches: {a.name}")
         exact = [mm for mm in res if mm["name"].lower() == a.name.lower()]
         res = (exact or res)[:1]
         if a.json:

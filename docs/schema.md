@@ -1,8 +1,8 @@
-# The FoodNoms store
+# The Foodnoms store
 
-Notes on the database FoodNoms reads, reverse-engineered from the shipping app rather than
+Notes on the database Foodnoms reads, reverse-engineered from the shipping app rather than
 documented. Written down so that a future migration is a diff against this page instead of a
-rediscovery — which matters, because FoodNoms has already migrated once.
+rediscovery — which matters, because Foodnoms has already migrated once.
 
 ## Finding it
 
@@ -24,7 +24,7 @@ Two abandoned stores are still on disk and both look convincing:
 Reading either returns years-old data with no error. `doctor` reports which store is live and
 names the ones it skipped.
 
-The `-wal` and `-shm` sidecars matter: FoodNoms holds the database open, so recent writes live
+The `-wal` and `-shm` sidecars matter: Foodnoms holds the database open, so recent writes live
 in the write-ahead log and copying the `.db` alone returns stale rows.
 
 ## Tables
@@ -56,7 +56,7 @@ The user's own library entries — foods created in the app rather than logged f
 ### `foodCollectionRecord`
 
 `collectionType` 2 is a saved Meal, 3 is a Recipe. `collectionID` is the raw 16 bytes of a UUID;
-rendered and upper-cased it is the identifier FoodNoms' log intents accept, which is what lets a
+rendered and upper-cased it is the identifier Foodnoms' log intents accept, which is what lets a
 Shortcut reference a saved meal by name. Members are `foodEntryRecord` rows whose
 `collectionEditID` matches.
 

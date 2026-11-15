@@ -1,7 +1,7 @@
 """Tests over a synthetic store.
 
 The CLI has no third-party dependencies and neither do these; `unittest` and a
-fixture database are enough, and they run without FoodNoms installed. What is
+fixture database are enough, and they run without Foodnoms installed. What is
 worth testing is the arithmetic and the matching — the places where a wrong
 answer looks like a right one.
 """
@@ -206,9 +206,9 @@ class TestBridgeInstalled(unittest.TestCase):
 
 
 class TestRequiredMacros(unittest.TestCase):
-    """The guard on the four macros FoodNoms insists on.
+    """The guard on the four macros Foodnoms insists on.
 
-    Without it, a `log` missing one does not fail — FoodNoms puts up its own
+    Without it, a `log` missing one does not fail — Foodnoms puts up its own
     prompt and waits, so a headless run blocks on a dialog nobody can answer.
     """
 
@@ -253,29 +253,29 @@ class TestBridgeVersioning(unittest.TestCase):
     def test_newest_stamp_wins(self):
         self.assertEqual(self.pick([
             "Log Water",
-            "FoodNoms Bridge 2026.09.07.0900",
-            "FoodNoms Bridge 2026.09.07.1729",
-            "FoodNoms Bridge 2026.08.30.2201",
-        ]), "FoodNoms Bridge 2026.09.07.1729")
+            "Foodnoms Bridge 2026.09.07.0900",
+            "Foodnoms Bridge 2026.09.07.1729",
+            "Foodnoms Bridge 2026.08.30.2201",
+        ]), "Foodnoms Bridge 2026.09.07.1729")
 
     def test_stamps_sort_by_time_not_string_length(self):
         self.assertEqual(self.pick([
-            "FoodNoms Bridge 2026.09.07.0900",
-            "FoodNoms Bridge 2026.10.01.0001",
-        ]), "FoodNoms Bridge 2026.10.01.0001")
+            "Foodnoms Bridge 2026.09.07.0900",
+            "Foodnoms Bridge 2026.10.01.0001",
+        ]), "Foodnoms Bridge 2026.10.01.0001")
 
     def test_a_stamped_build_beats_an_unstamped_one(self):
         self.assertEqual(self.pick([
-            "FoodNoms Bridge 3",
-            "FoodNoms Bridge 2026.09.07.1729",
-        ]), "FoodNoms Bridge 2026.09.07.1729")
+            "Foodnoms Bridge 3",
+            "Foodnoms Bridge 2026.09.07.1729",
+        ]), "Foodnoms Bridge 2026.09.07.1729")
 
     def test_falls_back_to_a_legacy_name(self):
-        self.assertEqual(self.pick(["FoodNoms Bridge 3"]),
-                         "FoodNoms Bridge 3")
+        self.assertEqual(self.pick(["Foodnoms Bridge 3"]),
+                         "Foodnoms Bridge 3")
 
     def test_the_env_override_wins_over_everything(self):
-        self.assertEqual(self.pick(["FoodNoms Bridge 2026.09.07.1729"],
+        self.assertEqual(self.pick(["Foodnoms Bridge 2026.09.07.1729"],
                                    env="Some Other Bridge"), "Some Other Bridge")
 
 
@@ -355,7 +355,7 @@ class TestFolderIdentifiers(unittest.TestCase):
 
 class TestStoreDiscovery(unittest.TestCase):
     def test_the_abandoned_stores_are_named_so_they_can_be_ruled_out(self):
-        # Both are still on disk on any machine that has run FoodNoms for long
+        # Both are still on disk on any machine that has run Foodnoms for long
         # enough, both are populated, and both answer confidently with data
         # years stale.
         self.assertTrue(all("Group Containers" in p for p in fn.LEGACY))
@@ -443,7 +443,7 @@ class TestDayComponents(StoreTest):
 class TestWorkoutMealTypes(StoreTest):
     """Meal types five and six are Pre-Workout and Post-Workout.
 
-    FoodNoms shows those names in its own picker and stores nothing, so they
+    Foodnoms shows those names in its own picker and stores nothing, so they
     used to surface as meal5/meal6 — a named, usable meal type that could not
     be asked for by the name on screen.
     """
@@ -524,7 +524,7 @@ class TestSplitConfirmation(StoreTest):
 class TestDayShowsMeal(StoreTest):
     """An entry says which meal it was filed under.
 
-    FoodNoms' six built-in meal types carry no name in the store, so reading
+    Foodnoms' six built-in meal types carry no name in the store, so reading
     the column raw gives an id or nothing — and `day` reported `meal: None` for
     an entry sitting squarely in Lunch. Anything rewriting an entry then had
     nothing to put it back with.
@@ -553,7 +553,7 @@ class TestPartialMacrosRefused(unittest.TestCase):
     """Some macros and not others is the one request no script can finish.
 
     `requireMacros` makes the intent ask for whichever it was not given,
-    FoodNoms puts up its own sheet, and nothing can type into it: the run sits
+    Foodnoms puts up its own sheet, and nothing can type into it: the run sits
     until the timeout kills it and reports "Running was cancelled", which reads
     like a broken bridge rather than a missing number.
     """
@@ -629,7 +629,7 @@ class TestLogMealConfirmation(TestSplitConfirmation):
 
 class TestBridgeWhenTheLibraryIsUnreadable(unittest.TestCase):
     """The launchd queue agent cannot read Shortcuts.sqlite, so it sees an
-    empty library. It used to fall back to the bare "FoodNoms Bridge" — a
+    empty library. It used to fall back to the bare "Foodnoms Bridge" — a
     Shortcut that does not exist — and hold the runtime while writes queued
     behind it failed. It now uses the last bridge an able process resolved."""
 
@@ -643,13 +643,13 @@ class TestBridgeWhenTheLibraryIsUnreadable(unittest.TestCase):
         fn.library_names, fn.BRIDGE_CACHE = self._names, self._cache
 
     def test_a_readable_library_records_the_bridge_it_found(self):
-        fn.library_names = lambda: ["FoodNoms Bridge 2026.09.12.2049"]
-        self.assertEqual(fn.find_bridge(), "FoodNoms Bridge 2026.09.12.2049")
+        fn.library_names = lambda: ["Foodnoms Bridge 2026.09.12.2049"]
+        self.assertEqual(fn.find_bridge(), "Foodnoms Bridge 2026.09.12.2049")
         with open(fn.BRIDGE_CACHE) as fh:
-            self.assertEqual(fh.read(), "FoodNoms Bridge 2026.09.12.2049")
+            self.assertEqual(fh.read(), "Foodnoms Bridge 2026.09.12.2049")
 
     def test_an_unreadable_library_uses_the_recorded_bridge(self):
         with open(fn.BRIDGE_CACHE, "w") as fh:
-            fh.write("FoodNoms Bridge 2026.09.12.2049")
+            fh.write("Foodnoms Bridge 2026.09.12.2049")
         fn.library_names = lambda: []
-        self.assertEqual(fn.find_bridge(), "FoodNoms Bridge 2026.09.12.2049")
+        self.assertEqual(fn.find_bridge(), "Foodnoms Bridge 2026.09.12.2049")

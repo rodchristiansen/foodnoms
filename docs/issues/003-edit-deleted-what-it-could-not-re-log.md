@@ -28,7 +28,7 @@ Three failures stacked, each hiding the one under it.
 
 Nothing dispatched at run time can re-log a library food. `LogIntent.food` is an entity, and an
 entity binds only from a literal written into the action when it is generated, or from another
-action's output; `SearchFoodLibraryIntent` and `SearchFoodnomsDatabaseIntent` both open FoodNoms'
+action's output; `SearchFoodLibraryIntent` and `SearchFoodnomsDatabaseIntent` both open Foodnoms'
 picker and block. A real-food entry can only be written by a Shortcut built with that food in it.
 
 So `edit` now says so instead of pretending. It refuses unless `--quick-entry` says the caller

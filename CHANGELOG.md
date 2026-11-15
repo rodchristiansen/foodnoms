@@ -3,7 +3,7 @@
 ## 0.1.0 — 2026-08-30
 
 First cut, extracted from a personal automation engine where it had been running against a live
-FoodNoms library since 2026-08-30.
+Foodnoms library since 2026-08-30.
 
 - `catalog` — every distinct food ever logged, most-logged first, deduplicated by service id
 - `search` / `resolve` — find a food by name, `barcode:` or `id:`; `resolve` returns exactly one
@@ -25,7 +25,7 @@ Adds the write path. Reads still go straight to SQLite; nothing ever writes the 
 
 ## 0.3.0 — 2026-08-30
 
-- Reads the **live** store. FoodNoms migrated from Core Data to GRDB and moved into the app's
+- Reads the **live** store. Foodnoms migrated from Core Data to GRDB and moved into the app's
   sandbox container; the two earlier stores are still on disk, still answer queries, and stop in
   2022 and 2025 respectively. The store is now discovered by matching each container's identity
   plist, and `doctor` names the one it chose plus the ones it skipped.
@@ -43,14 +43,14 @@ Adds the write path. Reads still go straight to SQLite; nothing ever writes the 
 
 ## 0.4.0 — 2026-08-31
 
-- `docs/app-intents.md` — what FoodNoms' App Intents accept, as opposed to what their metadata
-  declares. FoodNoms replaced `LogFoodIntent` and `LogDrinkIntent` with a single `LogIntent`,
+- `docs/app-intents.md` — what Foodnoms' App Intents accept, as opposed to what their metadata
+  declares. Foodnoms replaced `LogFoodIntent` and `LogDrinkIntent` with a single `LogIntent`,
   silently breaking every Shortcut written against the old identifiers; the new one takes a
   JSON-document entity identifier, requires an `AppIntentDescriptor`, and fails when you supply
   the parameters it declares as required. Also records that `SearchFoodLibraryIntent` opens a
   picker despite claiming not to, that `quantity` does nothing without a `foodMeasure`, and how
   to read an entity shape back out of `Shortcuts.sqlite` instead of guessing it.
-- `type: drink` is accepted only for FoodNoms' own drink entries — water logs, a milk sent that
+- `type: drink` is accepted only for Foodnoms' own drink entries — water logs, a milk sent that
   way fails with "An unknown error occurred" and logs fine as `type: food`.
 - Test one food per throwaway Shortcut. A Shortcut stops at its first failing action, so running
   a menu-driven one finds only the first bad food, behind prompts `shortcuts run` cannot answer.
@@ -67,7 +67,7 @@ The CLI can now correct the log, not only append to it.
 
 - `log --date` — log to an earlier day. `LogQuickEntryIntent` has always declared an optional
   `date`; the bridge never bound it, so every entry landed at "now" and the limitation looked
-  like FoodNoms'. A bare `YYYY-MM-DD` logs at noon, because FoodNoms buckets by local day and
+  like Foodnoms'. A bare `YYYY-MM-DD` logs at noon, because Foodnoms buckets by local day and
   midnight is the boundary a timezone offset pushes across.
 - `delete` — works, closing issue 001. `DeleteLoggedFoodIntent` takes an entity array, which
   binds from another action's output but never from an identifier passed at run time, so the
@@ -76,7 +76,7 @@ The CLI can now correct the log, not only append to it.
   wrapped because it is the list `delete` counts positions in: the intent omits water and
   drink entries, so its order is not the store's and has to be observed rather than assumed.
 - `edit` — correct an entry's macros, or move it to another day. `--scale 0.5` for half of
-  what was logged. There is no edit-a-logged-entry intent in FoodNoms' 45, so this is delete
+  what was logged. There is no edit-a-logged-entry intent in Foodnoms' 45, so this is delete
   plus re-log, and the re-log is a quick entry: the barcode and serving measure do not
   survive. It says so before doing it. Use `foodnoms-relog` when they must.
 - `foodnoms-relog` — the same correction, keeping the food. LogIntent selects its food and
@@ -90,7 +90,7 @@ The CLI can now correct the log, not only append to it.
   because an entry deleted with no replacement waiting is the one unrecoverable state here.
 - Timeout 25s → 90s. The timeout pkills `shortcuts run`, so a write still in flight died with
   it and was reported as "the intent did not return" — which reads like the known
-  does-not-return case and was this tool killing its own write. A cold FoodNoms needs over 30s.
+  does-not-return case and was this tool killing its own write. A cold Foodnoms needs over 30s.
 - `--publish` uses `open -a Shortcuts` and checks the library afterwards. A bare `open` hands
   the file to LaunchServices, which returns 0 having installed nothing.
 - `FOODNOMS_BRIDGE` overrides which Shortcut the CLI dispatches to, so a new build can be
@@ -127,12 +127,12 @@ Writes are queued, and a locked screen no longer loses them.
   anything under `~/Library/Mobile Documents`. `FOODNOMS_SPOOL` points it elsewhere.
 
 `log` refuses a write that would stop and ask. `requireMacros` is set on
-`LogQuickEntryIntent`, and FoodNoms does not fail when one of the four it requires — calories,
+`LogQuickEntryIntent`, and Foodnoms does not fail when one of the four it requires — calories,
 protein, carbs, fat — is missing: it puts up its own prompt ("How much total fat?") and waits,
 which on a headless run is a hang rather than an error. The command now names the missing flags
 up front. Fiber, sugars and sodium are genuinely optional.
 
-Verifying a write settles before giving up. FoodNoms commits through its own WAL and the
+Verifying a write settles before giving up. Foodnoms commits through its own WAL and the
 snapshot read here can be a beat behind it, so a write that had in fact landed read as missing,
 the request stayed pending, the agent retried it, and the entry was logged twice ten seconds
 apart. A missing entry is cheap to re-check; a duplicate costs a manual delete.
@@ -140,10 +140,10 @@ apart. A missing entry is cheap to re-check; a duplicate costs a manual delete.
 It is also the first release with tests.
 
 - `doctor` matches the bridge by **exact name**. Importing never replaces one already in the
-  library, so a rebuild lands beside the old copy as "FoodNoms Bridge 2" and a substring test
+  library, so a rebuild lands beside the old copy as "Foodnoms Bridge 2" and a substring test
   reported the write path healthy while every write failed with "Couldn't find shortcut".
 - `--version`.
-- Tests — stdlib `unittest` over a synthetic store, so they need neither FoodNoms nor your data:
+- Tests — stdlib `unittest` over a synthetic store, so they need neither Foodnoms nor your data:
   `python3 -m unittest discover -s tests`. They cover nutrient scaling, the local-day key, id
   matching, saved-meal exclusion and the bridge check.
 - CI on macOS and Linux, Python 3.10 and 3.13.
@@ -158,13 +158,13 @@ Unattended: it separates the reads that need nothing but the file from the write
 unlocked GUI session, with every number measured against a live library rather than inferred
 from Apple's metadata.
 
-`docs/feature-requests.md` collects what only FoodNoms can fix, so the workarounds here are not
+`docs/feature-requests.md` collects what only Foodnoms can fix, so the workarounds here are not
 mistaken for the way things have to be.
 
 ## Unreleased
 
 - Meal types five and six are named `pre-workout` and `post-workout` rather than `meal5` and
-  `meal6`. FoodNoms shows those names in its own meal picker but stores nothing, so two real
+  `meal6`. Foodnoms shows those names in its own meal picker but stores nothing, so two real
   meal types could not be asked for by the name on screen. `Post Workout`, `postworkout` and
   `post-wo` all resolve.
 
@@ -193,10 +193,10 @@ mistaken for the way things have to be.
 - `create-food` takes the whole nutrient panel `CreateFoodIntent` accepts — saturated,
   trans, mono- and polyunsaturated fat, cholesterol, sodium, fiber, sugars, added sugars,
   sugar alcohols, net carbs, caffeine, every vitamin, and every mineral — plus
-  `--serving-grams`. Units are FoodNoms' own: grams for macros, mg for minerals and the
+  `--serving-grams`. Units are Foodnoms' own: grams for macros, mg for minerals and the
   water-soluble vitamins, mcg for A, D, K, B12, folate, biotin, selenium, chromium,
   molybdenum and iodine. Supplements are the reason: a capsule is 0 kcal and all
-  micronutrients, and until now the only way to give FoodNoms those numbers was the app.
+  micronutrients, and until now the only way to give Foodnoms those numbers was the app.
 - The regenerated bridge carries the new parameters; reinstall it (`foodnoms-bridge
   --publish`) or `create-food` writes a food with macros only.
 
@@ -221,12 +221,12 @@ mistaken for the way things have to be.
   day holding the same food twice — routine once a meal is split across two of them —
   deleting one by id silently removed the other.
 
-- `day` says which meal each entry was filed under. The column holds an id and FoodNoms'
+- `day` says which meal each entry was filed under. The column holds an id and Foodnoms'
   own six types carry no name in the store, so an entry sitting in Lunch read as
   `meal: null` — and anything rewriting an entry had nothing to put it back with.
 
 - `log` refuses a partial macro set instead of hanging on it. `requireMacros` makes the
   intent ask for whichever of calories, protein, carbs and fat it was not given, and
-  FoodNoms raises its own sheet that no script can type into — so the run sat until the
+  Foodnoms raises its own sheet that no script can type into — so the run sat until the
   timeout killed it and reported "Running was cancelled", which reads like a broken
   bridge. Give all four or none; pass 0 where the food has none.

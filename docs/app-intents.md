@@ -1,13 +1,13 @@
-# Writing FoodNoms actions into a Shortcut
+# Writing Foodnoms actions into a Shortcut
 
-Notes on FoodNoms' App Intents as they are actually accepted, not as the metadata describes
+Notes on Foodnoms' App Intents as they are actually accepted, not as the metadata describes
 them. Everything here was found by running the intents and reading back what worked; none of
 it is documented by the app.
 
 ## Where the metadata lives
 
 ```text
-/Applications/FoodNoms.app/Contents/Resources/Metadata.appintents/extract.actionsdata
+/Applications/Foodnoms.app/Contents/Resources/Metadata.appintents/extract.actionsdata
 ```
 
 A JSON document listing every intent, its parameters, whether each is optional, and the cases
@@ -16,7 +16,7 @@ diverge constantly, and the rest of this page is that gap.
 
 ## The intents moved
 
-FoodNoms consolidated logging in 2026. `LogFoodIntent` and `LogDrinkIntent` are **gone**;
+Foodnoms consolidated logging in 2026. `LogFoodIntent` and `LogDrinkIntent` are **gone**;
 both are now `LogIntent` with a `type` enum. An action still pointing at the old identifiers
 renders as "Unknown Action" on an updated device and fails with `WFActionErrorDomain error 1`
 on macOS. Nothing warns you: a Shortcut written before the update keeps its actions, they
@@ -46,7 +46,7 @@ Check the identifier list against the metadata before assuming any intent still 
 ```
 
 `type` is `drink` for a drink, and the food then goes in `drink` rather than `foodEntry`.
-`service` is `manualEntry` for a food created in the app and `foodNoms` for one from FoodNoms'
+`service` is `manualEntry` for a food created in the app and `foodNoms` for one from Foodnoms'
 database; the `serviceID` is the store's `foodID` with its `local:` or `foodnoms:` prefix
 stripped. The entity identifier is a JSON **document**, not an id — a serialized Swift enum —
 and the display name is carried twice, as title and subtitle.
@@ -60,7 +60,7 @@ and the display name is carried twice, as title and subtitle.
 parameters the user actually set, and an action that names a required parameter the editor
 would have omitted fails at run time rather than logging.
 
-So the rule for every FoodNoms intent: write the minimum, and add a parameter only after
+So the rule for every Foodnoms intent: write the minimum, and add a parameter only after
 seeing the editor write it. Four different `mealType` spellings were tried against this
 intent — `"1"`, `"1"` with a `mealTypeID`, `"MealType:1"`, `"breakfast"` — and all four
 failed, while omitting it worked first time.
@@ -95,7 +95,7 @@ unit: 29.5735295625 for millilitres.
 ## `type: drink` is narrower than it looks
 
 `LogIntent`'s `type` enum offers `drink`, and the obvious reading — that anything you drink is
-a drink — is wrong. FoodNoms accepts it only for entries its own drink tracking recognises.
+a drink — is wrong. Foodnoms accepts it only for entries its own drink tracking recognises.
 Water logs correctly; almond, oat and macadamia milk all fail with "An unknown error occurred.
 Please submit a bug report to support@foodnoms.com", and log fine the moment they are sent as
 `type: food` instead.
@@ -119,7 +119,7 @@ It logs a real entry per option, so clean the day up afterwards.
 ## Intents that are not headless
 
 The metadata's `openAppWhenRun: false` does not mean an intent runs without UI.
-`SearchFoodnomsDatabaseIntent` and `SearchFoodLibraryIntent` both present FoodNoms' food
+`SearchFoodnomsDatabaseIntent` and `SearchFoodLibraryIntent` both present Foodnoms' food
 picker and block until someone chooses, so `shortcuts run` never returns. There is no
 declaration to check — an intent that resolves to entities is liable to do this, and the only
 way to find out is to run it once and watch.
@@ -152,7 +152,7 @@ perfectly well-formed, so the read lies rather than fails. Polling `-wal` until 
 (a few seconds, in practice) is the only signal that mirroring has actually delivered, and
 a timeout there means "no fresh data", not "the app failed to start".
 
-FoodNoms writes through its own intents rather than being read cold, so this CLI waits on
+Foodnoms writes through its own intents rather than being read cold, so this CLI waits on
 the process; it snapshots the store with its `-wal` and `-shm` before every read, which
 turns a stale mirror into stale data rather than a missing file. Anything that reads a
 mirrored store it does not also write wants the `-wal` wait instead.

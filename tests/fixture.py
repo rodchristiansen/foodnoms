@@ -1,4 +1,4 @@
-"""A synthetic FoodNoms store.
+"""A synthetic Foodnoms store.
 
 Column types follow the live schema, which is looser than it declares: `entryID`
 and `collectionID` are TEXT columns holding the raw 16 bytes of a UUID, and
@@ -127,7 +127,7 @@ def build(path):
          "Testworks", "serving", 1.0,
          json.dumps([measure("serving", 1, "capsule")]),
          json.dumps({"calories": 0, "zinc": 50})))
-    # The six meal types FoodNoms ships. None carry a name — the app knows
+    # The six meal types Foodnoms ships. None carry a name — the app knows
     # them by id, which is why five and six read as Pre-/Post-Workout.
     con.executemany(
         "INSERT INTO mealTypeRecord (mealTypeID, name, sortIndex, disabled, "

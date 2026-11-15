@@ -1,9 +1,9 @@
-# Feature requests for FoodNoms
+# Feature requests for Foodnoms
 
-A running list of things that would make FoodNoms automatable, kept here so it accumulates
+A running list of things that would make Foodnoms automatable, kept here so it accumulates
 instead of being rediscovered. Everything below was found by running the intents against a live
 library and reading back what happened; none of it is documented by the app, and none of it is a
-complaint about the app as a nutrition tracker — FoodNoms is the best one on Apple platforms
+complaint about the app as a nutrition tracker — Foodnoms is the best one on Apple platforms
 precisely because it stays out of the way.
 
 Ordered by how much each would change what is possible, not by how hard it looks.
@@ -123,7 +123,7 @@ the old one.
 **Ask:** an update intent taking a food and the fields to change, with the same panel
 `CreateFoodIntent` accepts.
 
-## Not FoodNoms' to fix
+## Not Foodnoms' to fix
 
 Recorded so they are not mistaken for app bugs.
 
@@ -137,7 +137,7 @@ Recorded so they are not mistaken for app bugs.
 - **An App Intents entity literal is `title`/`subtitle`/`identifier`.** The
   `identifier`/`displayString` envelope that Shortcuts' own entities accept does not bind a
   third-party entity; nothing in the metadata says so. That is Apple's serialization, not the
-  app's — but it is why a FoodNoms food, meal or measure has to be written in that exact shape.
+  app's — but it is why a Foodnoms food, meal or measure has to be written in that exact shape.
 - **Shortcuts does not run while the screen is locked**, and an import is not silent: it puts up
   an "Add Shortcut" preview that has to be confirmed. See `app-intents.md` for confirming it
   headlessly.
