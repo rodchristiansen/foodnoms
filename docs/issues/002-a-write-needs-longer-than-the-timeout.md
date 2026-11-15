@@ -8,7 +8,7 @@ does-not-return case, where the entry lands and `shortcuts run` simply never exi
 the opposite: nothing landed, because the timeout does not merely stop waiting. It pkills
 `shortcuts run`, and a write still in flight dies with it.
 
-A cold FoodNoms takes well over 30s to service `LogQuickEntryIntent`. At `timeout=25` every
+A cold Foodnoms takes well over 30s to service `LogQuickEntryIntent`. At `timeout=25` every
 write was killed at 25s and every one was reported ambiguously. Run by hand with a 65s window,
 the same request logged fine. The bound is now 90s.
 
@@ -24,7 +24,7 @@ Shortcuts <file>` installs. The publish step now names the app.
 **`shortcuts list` and a plain copy of `Shortcuts.sqlite` both lag.** The library lives in a
 WAL-mode database, and copying only the `.sqlite` reads a snapshot from the last checkpoint —
 in this case the previous day. Two imports that had actually succeeded looked like failures.
-Copying `-wal` and `-shm` alongside it, which `connect()` has always done for the FoodNoms
+Copying `-wal` and `-shm` alongside it, which `connect()` has always done for the Foodnoms
 store, showed them present. Verifying an absence is exactly where a stale read is most
 convincing and most wrong.
 

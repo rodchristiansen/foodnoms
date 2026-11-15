@@ -1,15 +1,15 @@
-# FoodNoms CLI
+# Foodnoms CLI
 
-FoodNoms is a fast, scriptable [FoodNoms](https://foodnoms.com) CLI for macOS, designed for
+Foodnoms is a fast, scriptable [Foodnoms](https://foodnoms.com) CLI for macOS, designed for
 power users and AI agents.
 
-FoodNoms is the best nutrition tracker on Apple platforms precisely because it does not want to
+Foodnoms is the best nutrition tracker on Apple platforms precisely because it does not want to
 be a social network — it wants to log food accurately and get out of the way. What it does not
 have is a surface a script can talk to. Your food library, your barcodes, your saved meals and
 every macro you have ever logged sit in a local Core Data store that nothing outside the app can
-read. FoodNoms reads it.
+read. Foodnoms reads it.
 
-The insight that makes this useful: **the log is the library.** Every entry FoodNoms writes
+The insight that makes this useful: **the log is the library.** Every entry Foodnoms writes
 carries the food's service identifiers, barcode, unit, serving size and complete nutrition. So
 the set of things you have ever logged — with counts, with the units you actually use, with the
 brand you are actually buying — is recoverable without any API, any account, and any network.
@@ -23,7 +23,7 @@ The full guides live in the **[wiki](https://github.com/rodchristiansen/foodnoms
 | **[Getting Started](https://github.com/rodchristiansen/foodnoms/wiki/Getting-Started)** | Install, run `doctor`, ask your first questions |
 | **[What Runs Unattended](https://github.com/rodchristiansen/foodnoms/wiki/What-Runs-Unattended)** | Which commands work over SSH, with the screen locked, from a phone — read this before automating anything |
 | [Reading Your Library](https://github.com/rodchristiansen/foodnoms/wiki/Reading-Your-Library) | `catalog`, `search`, `resolve`, `day`, `meals`, `barcodes` |
-| [Writing to FoodNoms](https://github.com/rodchristiansen/foodnoms/wiki/Writing-To-FoodNoms) | `log`, `create-food`, the macro rule, what a write costs |
+| [Writing to Foodnoms](https://github.com/rodchristiansen/foodnoms/wiki/Writing-To-Foodnoms) | `log`, `create-food`, the macro rule, what a write costs |
 | [The Write Queue](https://github.com/rodchristiansen/foodnoms/wiki/The-Write-Queue) | Why writes are queued, the drain agent, the locked-Mac problem |
 | [Correcting the Log](https://github.com/rodchristiansen/foodnoms/wiki/Correcting-The-Log) | `delete`, `edit`, and when to reach for `relog` |
 | [The Bridge Shortcut](https://github.com/rodchristiansen/foodnoms/wiki/The-Bridge-Shortcut) | Generating, signing, installing, and naming it |
@@ -42,11 +42,11 @@ work on the pages locally.
 foodnoms
   reads:  ~/Library/Containers/<uuid>/Data/Documents/db.db
           (discovered, snapshotted per invocation, opened read-only)
-  writes: FoodNoms Bridge.shortcut -> FoodNoms App Intents
+  writes: Foodnoms Bridge.shortcut -> Foodnoms App Intents
   never:  the store itself
 ```
 
-**The store has to be discovered, never hardcoded.** FoodNoms has moved it twice
+**The store has to be discovered, never hardcoded.** Foodnoms has moved it twice
 and both earlier locations are still on disk, still populated, and both look
 plausible: a Core Data store in the app group container that stops in 2022, and a
 GRDB copy beside it that stops in 2025. The live one is in the app's sandbox
@@ -58,16 +58,16 @@ stale — `doctor` names the live store and lists the ones it ignored.
 Three deliberate constraints:
 
 - **Never writes the store.** Reads go straight to SQLite; every mutation goes through
-  FoodNoms' own App Intents. This is not caution for its own sake — the store is
+  Foodnoms' own App Intents. This is not caution for its own sake — the store is
   CloudKit-mirrored (`NSPersistentCloudKitContainer`, and its `ANSCK*` bookkeeping tables are
   right there beside the data). A row inserted behind the app's back gets no CKRecord, so it
   never reaches your phone, and it can leave the export bookkeeping inconsistent with the object
   graph. Same split as [RemCTL](https://github.com/viticci/remctl), which reads the Reminders
   database directly and writes through EventKit.
 - **Snapshot before read.** The store is copied — with its `-wal` and `-shm` sidecars — to a
-  temporary path before every query, so a running FoodNoms.app never contends on the write-ahead
+  temporary path before every query, so a running Foodnoms.app never contends on the write-ahead
   log. Reads are consistent and the app never notices.
-- **The schema is not a contract.** These are GRDB internals, not a published API, and FoodNoms
+- **The schema is not a contract.** These are GRDB internals, not a published API, and Foodnoms
   has already migrated once from Core Data. `foodnoms doctor` tells you immediately when that
   happens instead of returning quietly wrong answers.
 
@@ -86,7 +86,7 @@ entries, distinct foods and saved meals it can see. Run it first; it is the answ
 every "why does this return nothing".
 
 If `doctor` reports that it cannot open the store, the app group container is TCC-protected and
-the process running FoodNoms needs Full Disk Access. That is the terminal, or the agent host,
+the process running Foodnoms needs Full Disk Access. That is the terminal, or the agent host,
 not the CLI itself — macOS attributes the access to the responsible process.
 
 ## What works headlessly
@@ -94,7 +94,7 @@ not the CLI itself — macOS attributes the access to the responsible process.
 Verified against a live 16,495-entry store, not inferred from the metadata.
 
 **Reads need nothing but the file.** They open a snapshot of the store and touch
-no other process, so they work over SSH, with FoodNoms closed, and while the
+no other process, so they work over SSH, with Foodnoms closed, and while the
 Mac's screen is locked. Every one takes `--json`.
 
 | Command | Typical |
@@ -118,7 +118,7 @@ with no `-i` reads stdin to EOF before it starts, so under an agent harness it
 never begins; and a shortcut that shows its result blocks until someone clicks.
 
 **`log` requires all four core macros.** `requireMacros` is set on
-`LogQuickEntryIntent`, and FoodNoms does not fail when one is missing — it puts
+`LogQuickEntryIntent`, and Foodnoms does not fail when one is missing — it puts
 up its own prompt ("How much total fat?") and waits, which on a headless run is
 a hang, not an error. So `log` refuses up front and names the missing flags.
 Fiber, sugars and sodium are genuinely optional. Pass `0` where a macro really
@@ -171,8 +171,8 @@ foodnoms resolve "id:12345678"
 
 ### `meals [name]` · `resolve-meal <name>`
 
-Saved FoodNoms Meals with their items. `resolve-meal` returns the meal's UUID — the same
-identifier FoodNoms' `LogMealIntent` takes — so a Shortcut can log a saved meal by name instead
+Saved Foodnoms Meals with their items. `resolve-meal` returns the meal's UUID — the same
+identifier Foodnoms' `LogMealIntent` takes — so a Shortcut can log a saved meal by name instead
 of by a UUID pasted in by hand.
 
 ```bash
@@ -193,7 +193,7 @@ preview is confirmed with a keystroke, and the folder literal was learned by dri
 on its own; `--no-folder` skips it.
 
 The bridge is matched by exact name. Importing a Shortcut never replaces one already in the
-library, so a rebuild lands beside the old copy as "FoodNoms Bridge 2" — a substring test
+library, so a rebuild lands beside the old copy as "Foodnoms Bridge 2" — a substring test
 would call the write path healthy while every write fails. `doctor` names the near-miss.
 
 `foodnoms --version` prints the version.
@@ -208,7 +208,7 @@ returns the intent's result.
 ./foodnoms-bridge --publish
 ```
 
-That generates `FoodNoms Bridge.xml` from [intents.yaml](intents.yaml), signs it, and opens
+That generates `Foodnoms Bridge.xml` from [intents.yaml](intents.yaml), signs it, and opens
 it for import — importing is a tap you make once in Shortcuts. After that:
 
 ```bash
@@ -246,12 +246,12 @@ conditional block closes.
 
 Dispatch compares the command name for **exact equality**, never "contains" — a contains-match
 branch for `log` fires for every future command that starts with it. The same mistake, in the
-other direction, is what let `doctor` report a bridge named "FoodNoms Bridge 3" as the
+other direction, is what let `doctor` report a bridge named "Foodnoms Bridge 3" as the
 bridge it runs.
 
 ### Which intents are wrapped, and why so few
 
-FoodNoms ships 45 App Intents; the manifest wraps five. Nine only open UI and do nothing
+Foodnoms ships 45 App Intents; the manifest wraps five. Nine only open UI and do nothing
 headless. Most of the rest are reads that `foodnoms` already answers faster and in more
 detail from the store — wrapping `GetFoodEntriesIntent` would be strictly worse than
 `foodnoms day`. So what is left is the writes the store must never perform itself, plus `goal`,
@@ -265,7 +265,7 @@ approach, and the reason `log` takes a quick entry rather than a library referen
 
 Two intents that would be genuinely useful are deliberately absent, because the local store
 cannot answer what they answer and neither is proven to run headlessly.
-`SearchFoodnomsDatabaseIntent` reaches FoodNoms' *online* database and presents the food
+`SearchFoodnomsDatabaseIntent` reaches Foodnoms' *online* database and presents the food
 picker, so `shortcuts run` never returns — that one is settled, and it cannot be wrapped.
 `AskFoodnomsAIIntent` and `LogWeightIntent` are untested here; the first declares a required
 entity-typed `mealType` and a `logImmediately` flag, which is the shape that tends not to bind.
@@ -278,7 +278,7 @@ Nutrition tracking dies at the point of friction. A shortcut that logs a smoothi
 each ingredient by identifier, and identifiers change every time a brand changes — so the
 automation rots, logging gets skipped, and the data stops being worth having.
 
-With a CLI over the library, that inverts. You scan groceries into FoodNoms once, as you already
+With a CLI over the library, that inverts. You scan groceries into Foodnoms once, as you already
 do, and everything downstream resolves against what is actually in your log:
 
 ```bash
@@ -304,7 +304,7 @@ Stated plainly, because they are structural:
   unnecessary, or merely easier, is collected in
   [docs/feature-requests.md](docs/feature-requests.md). The schema is internal and
   may change without notice — `doctor` is how you find out.
-- **Foods you have never logged are invisible.** This reads your library, not FoodNoms' full food
+- **Foods you have never logged are invisible.** This reads your library, not Foodnoms' full food
   database. Scan it once and it is queryable forever after.
 
 ## Dependencies
@@ -318,8 +318,8 @@ reads `intents.yaml`, so it needs **PyYAML** (`pip3 install pyyaml`). Nothing
 else in the tool does.
 
 Beyond Python it needs macOS — it reads a local container path, so there is no
-iOS equivalent — the `shortcuts` CLI, FoodNoms installed, and for writes the
-bridge Shortcut imported and FoodNoms running (the CLI launches it). The calling
+iOS equivalent — the `shortcuts` CLI, Foodnoms installed, and for writes the
+bridge Shortcut imported and Foodnoms running (the CLI launches it). The calling
 process needs Full Disk Access to read the container; macOS attributes that to
 the responsible process, so it is the terminal or the agent host, not the CLI.
 A launchd agent does not inherit it, which is why the queue defaults to
@@ -328,7 +328,7 @@ A launchd agent does not inherit it, which is why the queue defaults to
 ## Development
 
 One file, no third-party dependencies, stdlib `unittest`. The tests run against a synthetic
-store built by `tests/fixture.py`, so they need neither FoodNoms nor your data:
+store built by `tests/fixture.py`, so they need neither Foodnoms nor your data:
 
 ```bash
 python3 -m unittest discover -s tests -v
