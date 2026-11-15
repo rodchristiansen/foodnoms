@@ -58,7 +58,7 @@ Adds the write path. Reads still go straight to SQLite; nothing ever writes the 
   generator needs to write a `foodMeasure` — the intent's measure identifier is that dictionary
   wrapped in a `value` key.
 
-## 0.5.0 — 2026-09-05
+## 2026.09.05.1503
 
 The first release meant to be handed to someone else, and the one that makes the write
 path survive a locked Mac.
