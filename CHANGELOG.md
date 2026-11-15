@@ -161,7 +161,13 @@ from Apple's metadata.
 `docs/feature-requests.md` collects what only Foodnoms can fix, so the workarounds here are not
 mistaken for the way things have to be.
 
-## Unreleased
+## 0.6.0 — 2026-11-15
+
+- Spelled Foodnoms, lowercase n, as the app does, in the CLI, docs, tests and wiki. Only
+  names the app itself defines keep its spelling, such as `FoodNoms.sqlite`.
+- The bridge Shortcut is now named `Foodnoms Bridge`. Matching ignores case, so a bridge
+  installed under the old name is still found; rebuild and reinstall to get the new name
+  (`foodnoms-bridge --publish`).
 
 - Meal types five and six are named `pre-workout` and `post-workout` rather than `meal5` and
   `meal6`. Foodnoms shows those names in its own meal picker but stores nothing, so two real
