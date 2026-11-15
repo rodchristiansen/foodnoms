@@ -245,7 +245,7 @@ def main():
     ap = argparse.ArgumentParser(prog="foodnoms-relog", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("plan")
-    ap.add_argument("--name", default="FNCTL Relog " + datetime.now().strftime("%m%d%H%M"))
+    ap.add_argument("--name", default="Foodnoms Relog " + datetime.now().strftime("%m%d%H%M"))
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args()
 
