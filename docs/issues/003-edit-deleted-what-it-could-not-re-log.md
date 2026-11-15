@@ -19,7 +19,7 @@ Three failures stacked, each hiding the one under it.
    same name and quantity. A split logs the moved share first, so a same-named entry was
    already on the day; three of the seven matched it and reported success. `dispatch` and the
    queue drain had the same flaw, which is why the queued re-logs were marked done without
-   being written (fixed separately — see the 0.6.0 notes).
+   being written (fixed separately — see the 2026.11.15.1057 notes).
 
 3. **The delete addressed the first entry of that name.** `matches[0]` is the same entry as the
    one being edited only when the day holds one of them.
