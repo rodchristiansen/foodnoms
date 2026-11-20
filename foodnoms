@@ -843,7 +843,7 @@ NUTRIENT_FLAGS = (
     ("--fat-polyunsaturated", "fatPolyunsaturated"), ("--cholesterol", "cholesterol"),
     ("--sodium", "sodium"), ("--fiber", "fiber"), ("--sugars", "sugars"),
     ("--sugars-added", "sugarsAdded"), ("--sugar-alcohols", "sugarAlcohols"),
-    ("--net-carbs", "netCarbs"), ("--caffeine", "caffeine"), ("--vitamin-a", "vitaminA"),
+    ("--net-carbs", "netCarbs"), ("--alcohol", "alcoholG"), ("--caffeine", "caffeine"), ("--vitamin-a", "vitaminA"),
     ("--vitamin-c", "vitaminC"), ("--vitamin-d", "vitaminD"), ("--vitamin-e", "vitaminE"),
     ("--vitamin-k", "vitaminK"), ("--thiamin", "thiamin"), ("--riboflavin", "riboflavin"),
     ("--niacin", "niacin"), ("--vitamin-b6", "vitaminB6"), ("--vitamin-b12", "vitaminB12"),
@@ -1157,7 +1157,8 @@ def main():
                          "earlier day is the point of this flag.")
     for flag, dest in (("--calories", "energyCalories"), ("--protein", "protein"),
                        ("--carbs", "carbs"), ("--fat", "fat"), ("--fiber", "fiber"),
-                       ("--sugars", "sugars"), ("--sodium", "sodium")):
+                       ("--sugars", "sugars"), ("--sodium", "sodium"),
+                       ("--alcohol", "alcohol")):
         lg.add_argument(flag, dest=dest, type=float)
     cf = sub.add_parser("create-food", help="create a food in the library")
     cf.add_argument("--queue-only", action="store_true",
