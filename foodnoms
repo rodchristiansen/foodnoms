@@ -1200,21 +1200,14 @@ def _keychain_read():
 
 
 def _keychain_write(tokens):
-    subprocess.run(
-        [
-            "security",
-            "add-generic-password",
-            "-U",
-            "-s",
-            CLOUD_KEYCHAIN[0],
-            "-a",
-            CLOUD_KEYCHAIN[1],
-            "-w",
-            json.dumps(tokens),
-        ],
-        capture_output=True,
-        check=True,
-    )
+    # Fed to `security -i` on stdin, hex-encoded, so the tokens never appear in
+    # argv where any process on the machine could read them from `ps`.
+    secret = json.dumps(tokens).encode().hex()
+    line = (f"add-generic-password -U -s {CLOUD_KEYCHAIN[0]} -a {CLOUD_KEYCHAIN[1]} "
+            f"-X {secret}\n")
+    r = subprocess.run(["security", "-i"], input=line, capture_output=True, text=True)
+    if r.returncode != 0 or "error" in (r.stderr or "").lower():
+        raise CloudError(f"could not save the tokens to the Keychain: {r.stderr.strip()[:200]}")
 
 
 def _keychain_delete():
