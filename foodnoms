@@ -47,7 +47,7 @@ import time
 import uuid
 from datetime import date, datetime, timedelta, timezone
 
-__version__ = "2026.11.15.1057"
+__version__ = "2026.11.20.0123"
 
 BUNDLE = "com.algebraiclabs.foodnoms"
 # Importing a Shortcut does not replace a same-named one already in the library
@@ -616,11 +616,14 @@ def bridge_installed(listing, bridge=BRIDGE):
 
 def doctor():
     print("foodnoms doctor\n")
+    ok, msg = cloud_status()
+    print(f"  [{'OK' if ok else 'WARN'}]{'  ' if ok else ' '} Foodnoms Cloud: {msg}")
     store = find_store()
     if not store:
         print("  [FAIL] no Foodnoms store found in any sandbox container")
-        print("         Is Foodnoms installed, and has it been opened at least once?")
-        return 1
+        print("         Is Foodnoms installed, and has it been opened at least once? A")
+        print("         process without Full Disk Access cannot see the container either.")
+        return 0 if ok else 1
     print(f"  [OK]   store {store}")
     print(f"         {os.path.getsize(store) / 1_048_576:.1f} MB, modified "
           f"{datetime.fromtimestamp(os.path.getmtime(store)):%Y-%m-%d %H:%M}")
@@ -658,6 +661,11 @@ def doctor():
 
 
 def fmt_food(f, indent=""):
+    if f.get("source") == "cloud":
+        macro = f"{f.get('protein') or 0:.0f}p {f.get('calories') or 0:.0f}kcal"
+        alc = f" {f['alcohol']:.0f}g alc" if f.get("alcohol") else ""
+        meal = f"  {f['meal']}" if f.get("meal") else ""
+        return f"{indent}{f['name']}  [{f.get('amount') or '?'}]  {macro}{alc}{meal}"
     q = f"{f['quantity']:g}" if f.get("quantity") is not None else "?"
     unit = f.get("unit") or ""
     uq = f.get("unit_quantity")
@@ -1115,6 +1123,524 @@ def _flush(items, verbose):
     return ok, len(queued())
 
 
+# ---------------------------------------------------------------- Foodnoms Cloud
+#
+# Foodnoms publishes an official MCP server over Foodnoms Cloud. Talking to it
+# directly is the first choice for every read and most writes, because it needs
+# none of what the local path needs: no sandbox container to read (which macOS
+# protects, so any process without Full Disk Access sees "store not found"), no
+# bridge Shortcut, no unlocked screen and no running app. It reads what the
+# phone logged a second ago, not what CloudKit last mirrored to this Mac.
+#
+# The local store and the bridge stay as the fallback: offline, signed out, or
+# for a field the server does not expose.
+#
+# Auth is OAuth 2.1 against Foodnoms' Supabase project: dynamic client
+# registration, PKCE and a loopback redirect, so `foodnoms login` is one browser
+# approval. The tokens live in the login Keychain and the refresh token renews
+# the access token from then on, so launchd jobs and SSH sessions use it too.
+
+CLOUD_MCP = os.environ.get("FOODNOMS_MCP_URL", "https://mcp.foodnoms.com/mcp")
+CLOUD_KEYCHAIN = ("foodnoms-cloud", "tokens")
+CLOUD_PORT = 53682
+CLOUD_REDIRECT = f"http://127.0.0.1:{CLOUD_PORT}/callback"
+# Cloudflare in front of Supabase refuses Python's default user agent.
+CLOUD_UA = f"foodnoms-cli/{__version__}"
+
+
+class CloudError(Exception):
+    pass
+
+
+def _http(url, data=None, headers=None, form=False, method=None):
+    import urllib.request
+    import urllib.error
+    import urllib.parse
+
+    h = {"User-Agent": CLOUD_UA, "Accept": "application/json"}
+    h.update(headers or {})
+    body = None
+    if data is not None:
+        if form:
+            body = urllib.parse.urlencode(data).encode()
+            h["Content-Type"] = "application/x-www-form-urlencoded"
+        else:
+            body = json.dumps(data).encode()
+            h["Content-Type"] = "application/json"
+    req = urllib.request.Request(url, data=body, headers=h, method=method)
+    try:
+        with urllib.request.urlopen(req, timeout=60) as r:
+            return r.status, dict(r.headers), r.read().decode("utf-8", "replace")
+    except urllib.error.HTTPError as e:
+        return e.code, dict(e.headers), e.read().decode("utf-8", "replace")
+    except (urllib.error.URLError, TimeoutError, OSError) as e:
+        raise CloudError(f"cannot reach Foodnoms Cloud: {e}")
+
+
+def _keychain_read():
+    r = subprocess.run(
+        [
+            "security",
+            "find-generic-password",
+            "-s",
+            CLOUD_KEYCHAIN[0],
+            "-a",
+            CLOUD_KEYCHAIN[1],
+            "-w",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    if r.returncode != 0:
+        return None
+    try:
+        return json.loads(r.stdout.strip())
+    except ValueError:
+        return None
+
+
+def _keychain_write(tokens):
+    # Fed to `security -i` on stdin, hex-encoded, so the tokens never appear in
+    # argv where any process on the machine could read them from `ps`.
+    secret = json.dumps(tokens).encode().hex()
+    line = (f"add-generic-password -U -s {CLOUD_KEYCHAIN[0]} -a {CLOUD_KEYCHAIN[1]} "
+            f"-X {secret}\n")
+    r = subprocess.run(["security", "-i"], input=line, capture_output=True, text=True)
+    if r.returncode != 0 or "error" in (r.stderr or "").lower():
+        raise CloudError(f"could not save the tokens to the Keychain: {r.stderr.strip()[:200]}")
+
+
+def _keychain_delete():
+    subprocess.run(
+        [
+            "security",
+            "delete-generic-password",
+            "-s",
+            CLOUD_KEYCHAIN[0],
+            "-a",
+            CLOUD_KEYCHAIN[1],
+        ],
+        capture_output=True,
+    )
+
+
+def _auth_server():
+    """The authorization server the MCP resource names, and its metadata."""
+    base = CLOUD_MCP.rstrip("/")
+    st, _, body = _http(base + "/.well-known/oauth-protected-resource")
+    if st != 200:
+        root = base.split("/", 3)
+        st, _, body = _http(
+            "/".join(root[:3]) + "/.well-known/oauth-protected-resource"
+        )
+    if st != 200:
+        raise CloudError(f"no protected-resource metadata ({st})")
+    issuer = json.loads(body)["authorization_servers"][0].rstrip("/")
+    st, _, body = _http(issuer + "/.well-known/oauth-authorization-server")
+    if st != 200:
+        raise CloudError(f"no authorization-server metadata at {issuer} ({st})")
+    return json.loads(body)
+
+
+def cloud_login(open_browser=True):
+    import base64
+    import hashlib
+    import secrets
+    import threading
+    import urllib.parse
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    meta = _auth_server()
+    st, _, body = _http(
+        meta["registration_endpoint"],
+        {
+            "client_name": "foodnoms CLI",
+            "redirect_uris": [CLOUD_REDIRECT],
+            "grant_types": ["authorization_code", "refresh_token"],
+            "response_types": ["code"],
+            "token_endpoint_auth_method": "none",
+        },
+    )
+    if st not in (200, 201):
+        raise CloudError(f"client registration refused ({st}): {body[:200]}")
+    client_id = json.loads(body)["client_id"]
+
+    verifier = secrets.token_urlsafe(64)
+    challenge = (
+        base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest())
+        .rstrip(b"=")
+        .decode()
+    )
+    state = secrets.token_urlsafe(24)
+    url = (
+        meta["authorization_endpoint"]
+        + "?"
+        + urllib.parse.urlencode(
+            {
+                "response_type": "code",
+                "client_id": client_id,
+                "redirect_uri": CLOUD_REDIRECT,
+                "code_challenge": challenge,
+                "code_challenge_method": "S256",
+                "state": state,
+                "scope": "openid email profile",
+                "resource": CLOUD_MCP,
+            }
+        )
+    )
+
+    got = {}
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            if not self.path.startswith("/callback"):
+                self.send_response(404)
+                self.end_headers()
+                return
+            got.update({k: v[0] for k, v in q.items()})
+            ok = got.get("state") == state and "code" in got
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(
+                (
+                    "<p>foodnoms CLI is signed in. You can close this tab.</p>"
+                    if ok
+                    else "<p>Sign-in failed. Return to the terminal.</p>"
+                ).encode()
+            )
+
+        def log_message(self, *a):
+            pass
+
+    srv = HTTPServer(("127.0.0.1", CLOUD_PORT), Handler)
+    t = threading.Thread(target=srv.handle_request, daemon=True)
+    t.start()
+    print("Approve foodnoms CLI in the browser:\n  " + url, file=sys.stderr)
+    if open_browser:
+        subprocess.run(["open", url], capture_output=True)
+    t.join(timeout=600)
+    srv.server_close()
+    if got.get("state") != state or "code" not in got:
+        raise CloudError(
+            got.get("error_description")
+            or got.get("error")
+            or "no authorization code came back within ten minutes"
+        )
+
+    st, _, body = _http(
+        meta["token_endpoint"],
+        {
+            "grant_type": "authorization_code",
+            "code": got["code"],
+            "redirect_uri": CLOUD_REDIRECT,
+            "client_id": client_id,
+            "code_verifier": verifier,
+            "resource": CLOUD_MCP,
+        },
+        form=True,
+    )
+    if st != 200:
+        raise CloudError(f"token exchange refused ({st}): {body[:200]}")
+    tok = json.loads(body)
+    _keychain_write(
+        {
+            "client_id": client_id,
+            "token_endpoint": meta["token_endpoint"],
+            "access_token": tok["access_token"],
+            "refresh_token": tok.get("refresh_token"),
+            "expires_at": time.time() + int(tok.get("expires_in", 3600)),
+        }
+    )
+    return True
+
+
+def _access_token():
+    tok = _keychain_read()
+    if not tok:
+        raise CloudError("not signed in to Foodnoms Cloud — run `foodnoms login`")
+    if tok["expires_at"] - time.time() > 60:
+        return tok["access_token"]
+    if not tok.get("refresh_token"):
+        raise CloudError("Foodnoms Cloud session expired — run `foodnoms login`")
+    st, _, body = _http(
+        tok["token_endpoint"],
+        {
+            "grant_type": "refresh_token",
+            "refresh_token": tok["refresh_token"],
+            "client_id": tok["client_id"],
+            "resource": CLOUD_MCP,
+        },
+        form=True,
+    )
+    if st != 200:
+        raise CloudError(
+            f"Foodnoms Cloud refresh refused ({st}) — run `foodnoms login`"
+        )
+    new = json.loads(body)
+    tok.update(
+        access_token=new["access_token"],
+        refresh_token=new.get("refresh_token") or tok["refresh_token"],
+        expires_at=time.time() + int(new.get("expires_in", 3600)),
+    )
+    _keychain_write(tok)
+    return tok["access_token"]
+
+
+def cloud_signed_in():
+    return _keychain_read() is not None
+
+
+_cloud_session = {}
+
+
+def _rpc(method, params=None, notify=False):
+    headers = {
+        "Authorization": f"Bearer {_access_token()}",
+        "Accept": "application/json, text/event-stream",
+        "MCP-Protocol-Version": "2025-06-18",
+    }
+    if _cloud_session.get("id"):
+        headers["Mcp-Session-Id"] = _cloud_session["id"]
+    msg = {"jsonrpc": "2.0", "method": method}
+    if params is not None:
+        msg["params"] = params
+    if not notify:
+        _cloud_session["seq"] = _cloud_session.get("seq", 0) + 1
+        msg["id"] = _cloud_session["seq"]
+    st, hdrs, body = _http(CLOUD_MCP, msg, headers)
+    sid = {k.lower(): v for k, v in hdrs.items()}.get("mcp-session-id")
+    if sid:
+        _cloud_session["id"] = sid
+    if notify:
+        return None
+    if st == 401:
+        raise CloudError("Foodnoms Cloud rejected the token — run `foodnoms login`")
+    if st != 200:
+        raise CloudError(f"Foodnoms Cloud answered {st}: {body[:200]}")
+    if body.lstrip().startswith("{"):
+        reply = json.loads(body)
+    else:
+        # Streamable HTTP may answer as an event stream; the reply is the last
+        # `data:` line carrying this request's id.
+        reply = None
+        for line in body.splitlines():
+            if line.startswith("data:"):
+                try:
+                    d = json.loads(line[5:].strip())
+                except ValueError:
+                    continue
+                if d.get("id") == msg["id"]:
+                    reply = d
+        if reply is None:
+            raise CloudError("Foodnoms Cloud sent no reply")
+    if "error" in reply:
+        raise CloudError(reply["error"].get("message") or str(reply["error"]))
+    return reply.get("result")
+
+
+def _cloud_init():
+    if _cloud_session.get("ready"):
+        return
+    _rpc(
+        "initialize",
+        {
+            "protocolVersion": "2025-06-18",
+            "capabilities": {},
+            "clientInfo": {"name": "foodnoms-cli", "version": __version__},
+        },
+    )
+    _rpc("notifications/initialized", notify=True)
+    _cloud_session["ready"] = True
+
+
+def cloud_tools():
+    _cloud_init()
+    return _rpc("tools/list", {}).get("tools", [])
+
+
+def cloud_call(tool, **args):
+    """Call one server tool and return its result as data.
+
+    A tool reports a refusal as `isError` with the reason in its text, not as
+    an RPC error, so that is raised here with the server's own words."""
+    _cloud_init()
+    res = _rpc("tools/call", {"name": tool, "arguments": args}) or {}
+    text = "\n".join(
+        c.get("text", "") for c in res.get("content", []) if c.get("type") == "text"
+    )
+    if res.get("isError"):
+        raise CloudError(f"{tool}: {text.strip()[:400]}")
+    if res.get("structuredContent") is not None:
+        return res["structuredContent"]
+    try:
+        return json.loads(text)
+    except ValueError:
+        return text
+
+
+def _amount(v):
+    return v.get("value") if isinstance(v, dict) else v
+
+
+def cloud_entry(e, day_):
+    """One server entry in the shape `day` has always printed, so every caller
+    reading `foodnoms --json day` keeps working whichever source answered."""
+    n = e.get("nutrients") or {}
+    out = {
+        "name": e.get("name"),
+        "brand": e.get("brand"),
+        "entry_id": e.get("entry_id") or (e.get("merged_entry_ids") or [None])[0],
+        "amount": e.get("amount"),
+        "quantity": None,
+        "unit": None,
+        "meal": (e.get("meal_type") or "").lower() or None,
+        "date": f"{day_} {e['time']}" if e.get("time") else day_,
+        "accuracy": e.get("accuracy"),
+        "editable": e.get("editable"),
+        "calories": _amount(n.get("energy")),
+    }
+    for k in MACROS + ("alcohol", "water", "caffeine"):
+        out[k] = _amount(n.get(k))
+    out["source"] = "cloud"
+    return out
+
+
+def cloud_day(when):
+    log = cloud_call("get_food_log", date=when, include_all_nutrients=True)
+    entries = [cloud_entry(e, when) for e in log.get("entries", [])]
+    totals = {
+        k: round(sum(e.get(k) or 0 for e in entries), 1)
+        for k in (
+            "calories",
+            "protein",
+            "carbs",
+            "fat",
+            "fiber",
+            "sugars",
+            "sodium",
+            "alcohol",
+        )
+    }
+    return {
+        "date": when,
+        "totals": totals,
+        "entries": entries,
+        "source": "cloud",
+        "timezone": log.get("timezone"),
+    }
+
+
+def cloud_search(term, limit=10):
+    res = cloud_call("search", query=term, limit=limit)
+    hits = []
+    for section in (
+        "previously_logged",
+        "saved_foods",
+        "saved_recipes",
+        "saved_meals",
+        "database",
+    ):
+        for f in res.get(section) or []:
+            n = f.get("nutrients") or {}
+            hits.append(
+                {
+                    "name": f.get("name"),
+                    "brand": f.get("brand"),
+                    "section": section,
+                    "food_id": f.get("food_id"),
+                    "entry_id": f.get("entry_id"),
+                    "saved_food_id": f.get("saved_food_id"),
+                    "recipe_id": f.get("recipe_id"),
+                    "meal_id": f.get("meal_id"),
+                    "amount": f.get("amount") or f.get("serving"),
+                    "quantity": None,
+                    "unit": None,
+                    "calories": _amount(n.get("energy")),
+                    **{k: _amount(n.get(k)) for k in ("protein", "carbs", "fat")},
+                    "source": "cloud",
+                }
+            )
+    return hits
+
+
+def use_cloud(a):
+    """Cloud unless told otherwise or not signed in."""
+    if getattr(a, "local", False) or os.environ.get("FOODNOMS_SOURCE") == "local":
+        return False
+    return cloud_signed_in()
+
+
+def cloud_quick_entry(a):
+    """`log` through the server: a quick entry with every macro it was given,
+    alcohol included, filed to the named meal at the stated time."""
+    n = {}
+    if a.energyCalories is not None:
+        n["energy"] = {"value": a.energyCalories, "unit": "kilocalorie"}
+    for k in ("protein", "fat", "fiber", "sugars"):
+        v = getattr(a, k, None)
+        if v is not None:
+            n[k] = {"value": v, "unit": "gram"}
+    if a.carbs is not None:
+        n["carbs"] = {"value": a.carbs, "unit": "gram", "basis": "includes_fiber"}
+    if a.sodium is not None:
+        n["sodium"] = {"value": a.sodium, "unit": "milligram"}
+    if getattr(a, "alcohol", None) is not None:
+        n["alcohol"] = {"value": a.alcohol, "unit": "gram"}
+    args = {
+        "quick_entry": {"name": a.name, "nutrients": n},
+        "accuracy": getattr(a, "accuracy", None) or "estimate",
+    }
+    if a.date:
+        args["date"] = a.date[:10]
+        if len(a.date) >= 16:
+            args["time"] = a.date[11:16]
+    if getattr(a, "meal", None):
+        args["meal_type"] = a.meal
+    return cloud_call("log_food", **args)
+
+
+def cloud_again(a):
+    hits = [
+        h for h in cloud_search(a.food, limit=10) if h["section"] == "previously_logged"
+    ]
+    exact = [h for h in hits if (h["name"] or "").lower() == a.food.lower()]
+    pick = (exact or hits or [None])[0]
+    if pick is None:
+        raise CloudError(f"again: nothing in the log matches {a.food!r}")
+    if not exact and len({h["name"] for h in hits}) > 1:
+        names = ", ".join(sorted({h["name"] for h in hits})[:8])
+        raise CloudError(
+            f"again: {a.food!r} matches several foods ({names}); name one exactly"
+        )
+    args = {"entry_id": pick["entry_id"]}
+    if a.quantity is not None:
+        if not getattr(a, "unit", None):
+            raise CloudError(
+                "again: --quantity needs --unit through Foodnoms Cloud "
+                f"(last logged as {pick['amount']})"
+            )
+        args.update(quantity=a.quantity, unit=a.unit)
+    if a.to_date:
+        args["date"] = a.to_date[:10]
+        if len(a.to_date) >= 16:
+            args["time"] = a.to_date[11:16]
+    if a.meal:
+        args["meal_type"] = a.meal
+    return cloud_call("log_food", **args)
+
+
+def cloud_status():
+    """For doctor: signed in, and does a real call succeed."""
+    if not cloud_signed_in():
+        return False, "not signed in — `foodnoms login`"
+    try:
+        cloud_call("get_food_log", date=date.today().isoformat())
+        return True, f"signed in, {CLOUD_MCP} answering"
+    except CloudError as e:
+        return False, str(e)
+
 def main():
     ap = argparse.ArgumentParser(prog="foodnoms", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -1133,8 +1659,10 @@ def main():
     c = sub.add_parser("catalog"); c.add_argument("--min-count", type=int, default=1)
     c.add_argument("--since")
     s = sub.add_parser("search"); s.add_argument("term")
+    s.add_argument("--local", action="store_true", help="read the Mac's store, not Foodnoms Cloud")
     r = sub.add_parser("resolve"); r.add_argument("term")
     d = sub.add_parser("day"); d.add_argument("when", nargs="?", default=date.today().isoformat())
+    d.add_argument("--local", action="store_true", help="read the Mac's store, not Foodnoms Cloud")
     d.add_argument("--components", action="store_true",
                    help="include the items of saved meals and recipes. Logging a "
                         "meal writes one row per item and none named after the "
@@ -1143,6 +1671,13 @@ def main():
     m = sub.add_parser("meals"); m.add_argument("name", nargs="?")
     rm = sub.add_parser("resolve-meal"); rm.add_argument("name")
     sub.add_parser("doctor")
+    lo = sub.add_parser("login", help="sign in to Foodnoms Cloud once, in the browser")
+    lo.add_argument("--no-browser", action="store_true",
+                    help="print the approval URL instead of opening it")
+    sub.add_parser("logout", help="forget the Foodnoms Cloud tokens")
+    cl = sub.add_parser("cloud", help="call the Foodnoms Cloud server directly")
+    cl.add_argument("tool", nargs="?", help="tool name; omit to list the tools")
+    cl.add_argument("args", nargs="?", default="{}", help="tool arguments as JSON")
     sub.add_parser("barcodes", help="every known barcode and the food behind it")
 
     lg = sub.add_parser("log", help="log a food by name with macros")
@@ -1157,8 +1692,13 @@ def main():
                          "earlier day is the point of this flag.")
     for flag, dest in (("--calories", "energyCalories"), ("--protein", "protein"),
                        ("--carbs", "carbs"), ("--fat", "fat"), ("--fiber", "fiber"),
-                       ("--sugars", "sugars"), ("--sodium", "sodium")):
+                       ("--sugars", "sugars"), ("--sodium", "sodium"),
+                       ("--alcohol", "alcohol")):
         lg.add_argument(flag, dest=dest, type=float)
+    lg.add_argument("--accuracy", choices=("accurate", "approximate", "estimate"),
+                    help="Foodnoms Cloud only; a quick entry defaults to estimate")
+    lg.add_argument("--local", action="store_true",
+                    help="write through the bridge Shortcut, not Foodnoms Cloud")
     cf = sub.add_parser("create-food", help="create a food in the library")
     cf.add_argument("--queue-only", action="store_true",
                     help="queue without attempting to write")
@@ -1181,6 +1721,9 @@ def main():
     ag.add_argument("--date", dest="to_date", type=parse_when,
                     help="when it was eaten (default now)")
     ag.add_argument("--meal", help="breakfast, lunch, dinner, snack, …")
+    ag.add_argument("--unit", help="the measure --quantity is in (Foodnoms Cloud)")
+    ag.add_argument("--local", action="store_true",
+                    help="write through the bridge Shortcut, not Foodnoms Cloud")
     dl = sub.add_parser("delete", help="delete a logged entry by name or entry id")
     dl.add_argument("target", help="entry id, or a name to match in a day's log")
     dl.add_argument("--on", default=date.today().isoformat(),
@@ -1212,6 +1755,67 @@ def main():
     a = ap.parse_args()
     if a.cmd == "doctor":
         sys.exit(doctor())
+
+    if a.cmd in ("login", "logout", "cloud"):
+        try:
+            if a.cmd == "login":
+                cloud_login(open_browser=not a.no_browser)
+                print("signed in to Foodnoms Cloud")
+            elif a.cmd == "logout":
+                _keychain_delete()
+                print("signed out of Foodnoms Cloud")
+            elif not a.tool:
+                tools = cloud_tools()
+                if a.json:
+                    print(json.dumps(tools, indent=2))
+                else:
+                    for t in tools:
+                        print(f"{t['name']:24s} {(t.get('description') or '').split(chr(10))[0][:90]}")
+            else:
+                print(json.dumps(cloud_call(a.tool, **json.loads(a.args)), indent=2))
+        except CloudError as e:
+            sys.exit(str(e))
+        return
+
+    if a.cmd in ("day", "search", "resolve") and use_cloud(a) and not getattr(a, "components", False):
+        try:
+            res = cloud_day(a.when) if a.cmd == "day" else cloud_search(a.term)
+        except CloudError as e:
+            print(f"foodnoms: {e}; falling back to the local store", file=sys.stderr)
+        else:
+            if a.cmd == "resolve":
+                if not res:
+                    sys.exit(f"no Foodnoms food matches: {a.term}")
+                res = res[:1]
+            if a.json:
+                print(json.dumps(res, indent=2)); return
+            if a.cmd == "day":
+                t = res["totals"]
+                print(f"{res['date']}  —  {t['calories']:.0f} kcal · {t['protein']:.0f}g protein "
+                      f"· {t['carbs']:.0f}g carbs · {t['fat']:.0f}g fat"
+                      + (f" · {t['alcohol']:.0f}g alcohol" if t.get("alcohol") else ""))
+                for e in res["entries"]:
+                    print(fmt_food(e, "  "))
+            else:
+                for f in res:
+                    print(f"{f['section'][:9]:>9}  {fmt_food(f)}")
+                    print("           " + (f.get("entry_id") or f.get("food_id")
+                                           or f.get("saved_food_id") or f.get("recipe_id")
+                                           or f.get("meal_id") or ""))
+            return
+
+    if a.cmd in ("log", "again") and use_cloud(a) and not getattr(a, "queue_only", False):
+        try:
+            res = cloud_quick_entry(a) if a.cmd == "log" else cloud_again(a)
+        except CloudError as e:
+            sys.exit(str(e))
+        if a.json:
+            print(json.dumps(res, indent=2)); return
+        n = res.get("nutrients") or {}
+        print(f"logged {res.get('name')}  {res.get('amount') or ''}  {res.get('day')} "
+              f"{res.get('time') or ''}  {res.get('meal_type') or ''}  "
+              f"{_amount(n.get('energy')) or 0:.0f} kcal".rstrip())
+        return
 
     if a.cmd == "again":
         sys.exit(log_again(a))
