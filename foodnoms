@@ -47,7 +47,7 @@ import time
 import uuid
 from datetime import date, datetime, timedelta, timezone
 
-__version__ = "2026.11.20.0123"
+__version__ = "2026.11.22.1618"
 
 BUNDLE = "com.algebraiclabs.foodnoms"
 # Importing a Shortcut does not replace a same-named one already in the library
@@ -851,7 +851,7 @@ NUTRIENT_FLAGS = (
     ("--fat-polyunsaturated", "fatPolyunsaturated"), ("--cholesterol", "cholesterol"),
     ("--sodium", "sodium"), ("--fiber", "fiber"), ("--sugars", "sugars"),
     ("--sugars-added", "sugarsAdded"), ("--sugar-alcohols", "sugarAlcohols"),
-    ("--net-carbs", "netCarbs"), ("--caffeine", "caffeine"), ("--vitamin-a", "vitaminA"),
+    ("--net-carbs", "netCarbs"), ("--alcohol", "alcoholG"), ("--caffeine", "caffeine"), ("--vitamin-a", "vitaminA"),
     ("--vitamin-c", "vitaminC"), ("--vitamin-d", "vitaminD"), ("--vitamin-e", "vitaminE"),
     ("--vitamin-k", "vitaminK"), ("--thiamin", "thiamin"), ("--riboflavin", "riboflavin"),
     ("--niacin", "niacin"), ("--vitamin-b6", "vitaminB6"), ("--vitamin-b12", "vitaminB12"),
@@ -2044,7 +2044,7 @@ def main():
                          f"{missing}. Pass 0 where the food has none.")
 
         fields = {k: v for k, v in vars(a).items()
-                  if k not in ("cmd", "json", "queue_only", "meal")}
+                  if k not in ("cmd", "json", "queue_only", "meal", "local", "accuracy")}
         cmd = a.cmd
         if getattr(a, "meal", None):
             # A different branch entirely: mealType is entity-typed, so it is

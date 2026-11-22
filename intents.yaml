@@ -58,6 +58,9 @@ commands:
       fiber: {type: number}
       sugars: {type: number}
       sodium: {type: number}
+      # Grams of ethanol. A drink logged without it carries its calories but
+      # never reaches the alcohol total or the goal that tracks it.
+      alcohol: {type: number}
 
   - command: log-meal
     intent: GetMealTypeIntent
@@ -95,6 +98,7 @@ commands:
           - fiber
           - sugars
           - sodium
+          - alcohol
 
   - command: create-food
     intent: CreateFoodIntent
@@ -127,6 +131,7 @@ commands:
       sugarsAdded: {type: number}
       sugarAlcohols: {type: number}
       netCarbs: {type: number}
+      alcoholG: {type: number}
       caffeine: {type: number}
       vitaminA: {type: number}
       vitaminC: {type: number}
