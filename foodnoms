@@ -47,7 +47,7 @@ import time
 import uuid
 from datetime import date, datetime, timedelta, timezone
 
-__version__ = "2026.11.22.1618"
+__version__ = "2026.11.23.2233"
 
 BUNDLE = "com.algebraiclabs.foodnoms"
 # Importing a Shortcut does not replace a same-named one already in the library
@@ -1533,14 +1533,17 @@ def cloud_day(when):
 
 
 def cloud_search(term, limit=10):
-    res = cloud_call("search", query=term, limit=limit)
+    # Personal sources only, matching the local search, which only ever knew
+    # what had been logged or saved. Letting the public database in made a
+    # name lookup resolve to whatever generic food the server ranked first.
+    res = cloud_call("search", query=term, limit=limit,
+                     sources=["previously_logged", "saved"])
     hits = []
     for section in (
         "previously_logged",
         "saved_foods",
         "saved_recipes",
         "saved_meals",
-        "database",
     ):
         for f in res.get(section) or []:
             n = f.get("nutrients") or {}
@@ -1777,7 +1780,15 @@ def main():
             sys.exit(str(e))
         return
 
-    if a.cmd in ("day", "search", "resolve") and use_cloud(a) and not getattr(a, "components", False):
+    # search and resolve stay local for `barcode:`/`id:` terms, which the server
+    # cannot match and answers with unrelated foods, and for --json callers:
+    # scripts that build Shortcuts need the store's food ids, measures and
+    # barcodes, which the server does not return. A wrong answer there is
+    # worse than the local store's honest "not found".
+    lookup_local = a.cmd in ("search", "resolve") and (
+        a.json or re.match(r"(?i)(barcode|id):", getattr(a, "term", "") or ""))
+    if (a.cmd in ("day", "search", "resolve") and use_cloud(a)
+            and not lookup_local and not getattr(a, "components", False)):
         try:
             res = cloud_day(a.when) if a.cmd == "day" else cloud_search(a.term)
         except CloudError as e:
